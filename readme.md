@@ -9,6 +9,11 @@ Dieses Projekt ist ein einfaches Frontend, das mit **Vanilla JavaScript** (reine
 ## Voraussetzungen
 
 - Du brauchst ein mit Docker-Desktop erstelltes Django-Backend (Videoflix), dass **nicht** in diesem Projekt enthalten ist.
+- Das Backend muss **JWT-Authentifizierung** mit **HttpOnly-Cookies** unterstützen. Das bedeutet:
+  - Die Login-Response muss das JWT-Access-Token als HttpOnly-Cookie setzen.
+  - Anfragen an geschützte Routen müssen über diesen Cookie authentifiziert werden.
+  - Das Frontend hat keinen direkten Zugriff auf das Token (z.B. kein localStorage oder Authorization-Header).
+  - Stelle sicher, dass dein Backend Cross-Origin-Anfragen (CORS) korrekt für das lokale Frontend erlaubt.
 - Visual Studio Code mit der **Live Server**-Erweiterung oder eine ähnliche Möglichkeit, die `index.html` auf oberster Ebene lokal im Browser zu starten.
 - Du brauchst an den Dateien grundsätzlich **nichts** ändern.
 ---
