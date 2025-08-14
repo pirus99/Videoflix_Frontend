@@ -32,13 +32,14 @@ Dieses Frontend wurde bewusst mit **Vanilla JavaScript** erstellt, um die folgen
 
 - **Einfacher Einstieg**: Durch den Verzicht auf Frameworks wie React oder Angular bleibt der Code leicht verständlich und nachvollziehbar auch bei wenig Frontend-Erfahrung.
 - **Lernen durch Anpassung**: Schüler können den Code anpassen, um kleine Änderungen vorzunehmen und Frontend-Konzepte besser zu verstehen.
-- **Backend-Erweiterung**: Das Projekt lässt sich einfach an das bestehende Django-Backend `KanMind` anbinden.
+- **Backend-Erweiterung**: Das Projekt lässt sich einfach an das bestehende Django-Backend `Videoflix` anbinden.
 
 ---
 
 ## Hinweis
 
 Dieses Projekt ist **ausschließlich für Schüler der Developer Akademie** gedacht und nicht zur freien Nutzung oder Weitergabe freigegeben.
+Im Ordner `EmailTemplates_Backend` findest du die **Vorlagen** für das erstellen der **E-Mails für das Backend**.
 
 ---
 
