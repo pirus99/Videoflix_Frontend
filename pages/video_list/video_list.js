@@ -58,15 +58,18 @@ function handleResolutionChange(event) {
  * Loads videos from the backend and sets up the UI.
  */
 async function loadAndSetupVideos() {
+    let response
     try {
-        const response = await getData();
+        response = await getData();
         VIDEOS = await response.json();
         await getNewestVideos();
         setStartVideo();
         await renderVideosDynamically();
         setupInitialVideo();
     } catch (error) {
-        console.error('Error loading videos:', error);
+        document.getElementById('videoTitle').style.color = 'red';
+        document.getElementById('category-new').style.display = 'none';
+        document.getElementById('playButton').style.display = 'none';
         showToastMessage(true, ['Failed to load videos']);
     }
 }
