@@ -187,7 +187,7 @@ function initPasswordReset() {
         showToastAndRedirect(true, ["Invalid reset link"], "./login.html", TOAST_DURATION);
         return;
     }
-    window.resetParams = params;
+    window.resetParams= params;
 }
 
 /**
@@ -200,7 +200,7 @@ async function confirmPasswordSubmit(event) {
     event.preventDefault();
     const form = event.target;
     const formData = getFormData(form);
-    const apiEndpoint = `password_confirm/${window.resetParams.uid}/${window.resetParams.token}/`;
+    const apiEndpoint = `password_confirm/${window.resetParams}/`;
     const data = {
         new_password: formData.password,
         confirm_password: formData.repeated_password,
@@ -243,25 +243,25 @@ async function activateAccount() {
  * Extracts activation parameters (uid and token) from URL.
  * Calls error handler if missing.
  *
- * @returns {{uid: string, token: string} | null}
+ * @returns {string | null}
  */
 function extractActivationParams() {
-    const {uid, token} = extractParams() || {};
-    if (!uid || !token) {
+    const token = extractParams() || null;
+    if (!token) {
         handleActivationError('Invalid activation link');
         return null;
     }
-    return {uid, token};
+    return token;
 }
 
 /**
  * Sends a GET request to activate the account.
  *
- * @param {{uid: string, token: string}} params - Activation parameters.
+ * @param {string} token - Activation token.
  * @returns {Promise<Object>} The parsed server response.
  */
-async function processActivation({uid, token}) {
-    const response = await getData(uid, token);
+async function processActivation(token) {
+    const response = await getData(token);
     const result = await response.json();
 
     if (!response.ok) {

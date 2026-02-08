@@ -75,12 +75,11 @@ async function postData(endpoint, data) {
 
 /**
  * Sends a GET request to the API, optionally with activation parameters.
- * @param {string} [uid] - User ID for account activation.
  * @param {string} [token] - Token for account activation.
  * @returns {Promise<Response>} Fetch response object.
  */
-async function getData(uid, token) {
-    const endpoint = (uid && token) ? `activate/${uid}/${token}/` : `video/`
+async function getData(token) {
+    const endpoint = (token) ? `activate/${token}/` : `video/`
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'GET',
         headers: {

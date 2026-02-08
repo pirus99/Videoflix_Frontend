@@ -115,11 +115,10 @@ function getToastHTML(msg, error) {
  */
 function extractParams() {
     const urlParams = new URLSearchParams(window.location.search);
-    const uid = urlParams.get('uid');
     const token = urlParams.get('token');
 
-    if (uid && token) {
-        return {uid, token};
+    if (token) {
+        return token;
     }
     return null;
 }
