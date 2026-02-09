@@ -709,7 +709,6 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     }
 
     const overlayConfig = getOverlayHlsConfig();
-    postStartBufferingEnabled = false;
     overlayConfig.loader = createOverlaySegmentLoader();
     overlayHls = new Hls(overlayConfig);
 
