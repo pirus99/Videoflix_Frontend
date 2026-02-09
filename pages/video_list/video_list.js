@@ -3,10 +3,10 @@ const NEWEST_ELEMENT = document.getElementById('newest');
 
 const BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS = 2000;
 const END_OF_VIDEO_THRESHOLD_SECONDS = 0.5;
-const OVERLAY_POST_PLAY_BUFFER_LENGTH = 90;
-const OVERLAY_POST_PLAY_MAX_BUFFER_LENGTH = 180;
-const OVERLAY_POST_PLAY_BUFFER_SIZE = 120 * 1000 * 1000;
-const OVERLAY_POST_PLAY_BACK_BUFFER = 60;
+const OVERLAY_POST_PLAY_BUFFER_LENGTH = 180;
+const OVERLAY_POST_PLAY_MAX_BUFFER_LENGTH = 360;
+const OVERLAY_POST_PLAY_BUFFER_SIZE = 200 * 1000 * 1000;
+const OVERLAY_POST_PLAY_BACK_BUFFER = 120;
 
 /**
  * Shared HLS.js configuration optimized for on-demand transcoding scenarios.
@@ -414,7 +414,10 @@ function initDOMElements() {
  * Sets up event listeners such as resolution change.
  */
 function initEventListeners() {
-    document.getElementById('setResolution').addEventListener('change', handleResolutionChange);
+    const resolutionSelect = document.getElementById('setResolution');
+    if (resolutionSelect) {
+        resolutionSelect.addEventListener('change', handleResolutionChange);
+    }
 }
 
 /**
@@ -1080,6 +1083,11 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
     overlayHls.on(Hls.Events.MANIFEST_PARSED, () => {
         console.log("Manifest parsed, waiting for segments...");
+        if (overlayHls.levels && overlayHls.levels.length > 0) {
+            overlayHls.autoLevelEnabled = false;
+            overlayHls.currentLevel = 0;
+            overlayHls.nextLevel = 0;
+        }
         overlayHls.startLoad(safeStartTime);
 
         if (safeStartTime > 0) {
@@ -1143,7 +1151,10 @@ function openVideoOverlay(videoId, resolution) {
     overlay.style.display = 'flex';
     document.body.classList.add('overlay-open');
     document.getElementById('overlayTitle').innerHTML = video.title;
-    document.getElementById('setResolution').value = resolution;
+    const resolutionSelect = document.getElementById('setResolution');
+    if (resolutionSelect) {
+        resolutionSelect.value = resolution;
+    }
     currentResolution = resolution;
     loadVideoInOverlay(videoId, resolution);
     document.body.style.overflow = 'hidden';
