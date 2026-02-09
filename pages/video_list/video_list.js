@@ -687,6 +687,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let ignoreSeekEvent = false;
     let ignoreSeekResetTimer = null;
     let seekBufferTimer = null;
+    let seekedHandler = null;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -747,6 +748,19 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         return false;
     }
 
+    function tryResumeFromSeek() {
+        if (pendingSeekTime === null || !isTimeBuffered(pendingSeekTime)) {
+            return false;
+        }
+        pendingSeekTime = null;
+        setControlsLocked(false);
+        if (resumeAfterSeek) {
+            attemptPlayback(overlayVideoContainer);
+        }
+        resumeAfterSeek = false;
+        return true;
+    }
+
     setControlsLocked(false);
 
     overlayVideoContainer.onseeking = () => {
@@ -759,7 +773,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         const segmentDistance = getSegmentDistance(targetFrag, seekTime);
         const shouldLock = segmentDistance >= SEEK_SEGMENT_THRESHOLD;
 
-        resumeAfterSeek = !overlayVideoContainer.paused;
+        const wasPlaying = !overlayVideoContainer.paused;
         pendingSeekTime = seekTime;
 
         if (shouldLock) {
@@ -767,39 +781,35 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         overlayVideoContainer.pause();
+        resumeAfterSeek = wasPlaying;
 
         overlayHls.stopLoad();
-        overlayVideoContainer.addEventListener('seeked', () => {
-            if (pendingSeekTime !== null && isTimeBuffered(pendingSeekTime)) {
-                pendingSeekTime = null;
-                setControlsLocked(false);
-                if (resumeAfterSeek) {
-                    attemptPlayback(overlayVideoContainer);
-                }
-                resumeAfterSeek = false;
-            } else if (pendingSeekTime !== null) {
-                if (seekBufferTimer) {
-                    clearInterval(seekBufferTimer);
-                }
+        if (seekBufferTimer) {
+            clearInterval(seekBufferTimer);
+            seekBufferTimer = null;
+        }
+        if (seekedHandler) {
+            overlayVideoContainer.removeEventListener('seeked', seekedHandler);
+            seekedHandler = null;
+        }
+        seekedHandler = () => {
+            if (!tryResumeFromSeek() && pendingSeekTime !== null) {
                 seekBufferTimer = setInterval(() => {
                     if (pendingSeekTime === null) {
                         clearInterval(seekBufferTimer);
                         seekBufferTimer = null;
                         return;
                     }
-                    if (isTimeBuffered(pendingSeekTime)) {
-                        pendingSeekTime = null;
-                        setControlsLocked(false);
-                        if (resumeAfterSeek) {
-                            attemptPlayback(overlayVideoContainer);
-                        }
-                        resumeAfterSeek = false;
+                    if (tryResumeFromSeek()) {
                         clearInterval(seekBufferTimer);
                         seekBufferTimer = null;
                     }
                 }, 250);
             }
-        }, { once: true });
+            overlayVideoContainer.removeEventListener('seeked', seekedHandler);
+            seekedHandler = null;
+        };
+        overlayVideoContainer.addEventListener('seeked', seekedHandler);
         setTimeout(() => {
             try {
                 overlayHls.startLoad(seekTime);
