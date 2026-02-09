@@ -675,7 +675,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     overlayHls.loadSource(videoUrl);
     overlayHls.attachMedia(overlayVideoContainer);
 
-    const SEEK_SEGMENT_THRESHOLD = 10; // Backend cancels transcoding beyond ~10 segments.
+    const SEEK_SEGMENT_THRESHOLD = 10; // Backend cancels transcoding beyond 10 segments.
     const SEEK_LOAD_DELAY = 300; // Allow backend to switch transcoding position.
     const initialTime = Number.isFinite(startTime) ? startTime : 0;
     const shouldAutoPlay = resumePlayback;
@@ -720,6 +720,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         const details = getLevelDetails();
         const segmentDuration = details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration;
         if (!segmentDuration) {
+            console.warn('Segment duration unavailable for seek distance.');
             return 0;
         }
         return Math.abs(seekTime - lastLoadedFrag.start) / segmentDuration;
@@ -752,7 +753,13 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         overlayHls.stopLoad();
-        setTimeout(() => overlayHls.startLoad(seekTime), SEEK_LOAD_DELAY);
+        setTimeout(() => {
+            try {
+                overlayHls.startLoad(seekTime);
+            } catch (error) {
+                console.error('Failed to restart overlay load after seek.', error);
+            }
+        }, SEEK_LOAD_DELAY);
     };
 
     overlayVideoContainer.onwaiting = () => {
