@@ -679,6 +679,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     const SEEK_LOAD_DELAY = 300; // Allow backend to switch transcoding position.
     const INITIAL_SEEK_SETTLE_TIME = 2000;
     const SEEK_BUFFER_POLL_INTERVAL = 500;
+    const SEEK_BUFFER_POLL_TIMEOUT = 15000;
     const safeStartTime = Number.isFinite(startTime) ? startTime : 0;
     const shouldAutoPlay = resumePlayback;
     let lastLoadedFrag = null;
@@ -792,8 +793,6 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         const segmentDistance = getSegmentDistance(targetFrag, seekTime);
         const shouldLock = segmentDistance >= SEEK_SEGMENT_THRESHOLD;
 
-        // Capture pre-pause state so we can resume once the target segment buffers.
-        const wasPlaying = !overlayVideoContainer.paused;
         pendingSeekTime = seekTime;
 
         // Pause for all seeks; lock controls only for large jumps that restart transcoding.
@@ -801,6 +800,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             setControlsLocked(true);
         }
 
+        // Capture pre-pause state so we can resume once the target segment buffers.
+        const wasPlaying = !overlayVideoContainer.paused;
         overlayVideoContainer.pause();
         resumeAfterSeek = wasPlaying;
 
@@ -810,9 +811,14 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         seekedHandler = () => {
             clearSeekBufferTimer();
             if (!tryResumeFromSeek() && pendingSeekTime !== null) {
+                const pollStart = Date.now();
                 seekBufferTimer = setInterval(() => {
                     // pendingSeekTime can be cleared by other buffering events between ticks.
                     if (pendingSeekTime === null) {
+                        clearSeekBufferTimer();
+                        return;
+                    }
+                    if (Date.now() - pollStart > SEEK_BUFFER_POLL_TIMEOUT) {
                         clearSeekBufferTimer();
                         return;
                     }
@@ -822,9 +828,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                     }
                 }, SEEK_BUFFER_POLL_INTERVAL);
             }
-            clearSeekedHandler();
         };
-        overlayVideoContainer.addEventListener('seeked', seekedHandler);
+        overlayVideoContainer.addEventListener('seeked', seekedHandler, { once: true });
         setTimeout(() => {
             try {
                 overlayHls.startLoad(seekTime);
