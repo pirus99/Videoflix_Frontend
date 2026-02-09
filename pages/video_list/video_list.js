@@ -814,7 +814,6 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                     }
                 }, SEEK_BUFFER_POLL_INTERVAL);
             }
-            seekedHandler = null;
         };
         overlayVideoContainer.addEventListener('seeked', seekedHandler, { once: true });
         setTimeout(() => {
