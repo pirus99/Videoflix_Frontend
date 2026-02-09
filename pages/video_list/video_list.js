@@ -837,7 +837,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     }
 
     setControlsLocked(false);
-    // Replace handlers on re-init to avoid duplicate listeners.
+    // Replace handlers on re-init; overlay player owns these listeners.
     overlayVideoContainer.onemptied = () => {
         clearSeekState();
     };
@@ -887,7 +887,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return;
         }
 
-        // Fallback to in-place seek handling if no current video is tracked.
+        // Fallback to in-place seek handling if no current video is tracked but the player exists.
         if (!overlayHls) {
             return;
         }
