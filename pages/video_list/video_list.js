@@ -1,5 +1,5 @@
 let overlayHls = null;
-const NEWEST = document.getElementById('newest');
+const NEWEST_ELEMENT = document.getElementById('newest');
 
 const BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS = 2000;
 const END_OF_VIDEO_THRESHOLD_SECONDS = 0.5;
@@ -513,9 +513,9 @@ async function renderVideosDynamically() {
  * @function
  */
 function renderNewestSection() {
-    NEWEST.innerHTML = '';
+    NEWEST_ELEMENT.innerHTML = '';
     LATESTVIDEOS.forEach(video => {
-        NEWEST.append(videoTemplate(video, video.thumbnail_url));
+        NEWEST_ELEMENT.append(videoTemplate(video, video.thumbnail_url));
     });
 }
 
