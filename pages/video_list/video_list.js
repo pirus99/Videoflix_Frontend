@@ -796,6 +796,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         const wasPlaying = !overlayVideoContainer.paused;
         pendingSeekTime = seekTime;
 
+        // Pause for all seeks; lock controls only for large jumps that restart transcoding.
         if (shouldLock) {
             setControlsLocked(true);
         }
@@ -805,7 +806,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
         overlayHls.stopLoad();
         clearSeekBufferTimer();
-        clearSeekedHandler(); // Ensure only one seeked handler for rapid consecutive seeks.
+        clearSeekedHandler(); // ensure only one seeked handler for rapid consecutive seeks.
         seekedHandler = () => {
             clearSeekBufferTimer();
             if (!tryResumeFromSeek() && pendingSeekTime !== null) {
@@ -819,8 +820,9 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                     }
                 }, SEEK_BUFFER_POLL_INTERVAL);
             }
+            clearSeekedHandler();
         };
-        overlayVideoContainer.addEventListener('seeked', seekedHandler, { once: true });
+        overlayVideoContainer.addEventListener('seeked', seekedHandler);
         setTimeout(() => {
             try {
                 overlayHls.startLoad(seekTime);
