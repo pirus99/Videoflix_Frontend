@@ -767,6 +767,23 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         return true;
     }
 
+    function isOutOfOrderFrag(frag) {
+        return pendingSeekTime === null
+            && lastLoadedFrag
+            && typeof lastLoadedFrag.sn === 'number'
+            && frag.sn > lastLoadedFrag.sn + 1;
+    }
+
+    function enforceSequentialLoad(frag) {
+        if (!isOutOfOrderFrag(frag)) {
+            return false;
+        }
+        const expectedTime = lastLoadedFrag.start + lastLoadedFrag.duration;
+        overlayHls.stopLoad();
+        setTimeout(() => overlayHls.startLoad(expectedTime), SEEK_LOAD_DELAY);
+        return true;
+    }
+
     function shouldResumeAfterSeek() {
         return !userPaused && (resumeAfterSeek || !overlayVideoContainer.paused);
     }
@@ -897,10 +914,16 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     });
 
     overlayHls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+        if (enforceSequentialLoad(data.frag)) {
+            return;
+        }
         lastLoadedFrag = data.frag;
     });
 
     overlayHls.on(Hls.Events.FRAG_BUFFERED, (event, data) => {
+        if (enforceSequentialLoad(data.frag)) {
+            return;
+        }
         lastLoadedFrag = data.frag;
         if (pendingSeekTime !== null && fragCoversTime(data.frag, pendingSeekTime)) {
             pendingSeekTime = null;
