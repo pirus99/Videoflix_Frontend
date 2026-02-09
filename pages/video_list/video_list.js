@@ -887,7 +887,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return;
         }
 
-        // Fallback to in-place seek handling if no current video is tracked but the player exists.
+        // Fallback to in-place seek handling if no current video is tracked.
         if (!overlayHls) {
             return;
         }
