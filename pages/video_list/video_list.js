@@ -1084,10 +1084,11 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     overlayHls.on(Hls.Events.MANIFEST_PARSED, () => {
         console.log("Manifest parsed, waiting for segments...");
         if (overlayHls.levels && overlayHls.levels.length > 0) {
-            // Disable auto quality to prevent switches during on-demand transcoding.
+            // Disable auto quality to avoid switches during on-demand transcoding; users can choose manually.
             overlayHls.autoLevelEnabled = false;
+            const activeResolution = currentResolution || '480p';
             const levelIndex = overlayHls.levels.findIndex(
-                level => level && level.height !== null && currentResolution === `${level.height}p`
+                level => level && level.height !== null && activeResolution === `${level.height}p`
             );
             if (levelIndex < 0) {
                 console.log('Fallback to default quality level (0).');
