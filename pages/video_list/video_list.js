@@ -1101,7 +1101,11 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                 ? preferredIndex
                 : (defaultIndex >= 0 ? defaultIndex : 0);
             if (preferredIndex < 0) {
-                console.log(`Fallback to available quality level (${resolvedLevel}).`);
+                if (defaultIndex >= 0) {
+                    console.log(`Fallback to default quality level (${resolvedLevel}).`);
+                } else {
+                    console.log(`Fallback to first available quality level (${resolvedLevel}).`);
+                }
             }
             overlayHls.currentLevel = resolvedLevel;
         }
