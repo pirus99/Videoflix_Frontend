@@ -686,6 +686,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let controlsLocked = false;
     let ignoreSeekEvent = false;
     let ignoreSeekResetTimer = null;
+    let seekBufferTimer = null;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -763,8 +764,6 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
         if (shouldLock) {
             setControlsLocked(true);
-        } else if (!controlsLocked) {
-            setControlsLocked(false);
         }
 
         overlayVideoContainer.pause();
@@ -778,6 +777,27 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                     attemptPlayback(overlayVideoContainer);
                 }
                 resumeAfterSeek = false;
+            } else if (pendingSeekTime !== null) {
+                if (seekBufferTimer) {
+                    clearInterval(seekBufferTimer);
+                }
+                seekBufferTimer = setInterval(() => {
+                    if (pendingSeekTime === null) {
+                        clearInterval(seekBufferTimer);
+                        seekBufferTimer = null;
+                        return;
+                    }
+                    if (isTimeBuffered(pendingSeekTime)) {
+                        pendingSeekTime = null;
+                        setControlsLocked(false);
+                        if (resumeAfterSeek) {
+                            attemptPlayback(overlayVideoContainer);
+                        }
+                        resumeAfterSeek = false;
+                        clearInterval(seekBufferTimer);
+                        seekBufferTimer = null;
+                    }
+                }, 250);
             }
         }, { once: true });
         setTimeout(() => {
