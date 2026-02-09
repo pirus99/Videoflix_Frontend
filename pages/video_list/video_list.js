@@ -678,6 +678,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     const SEEK_SEGMENT_THRESHOLD = 10; // Backend cancels transcoding beyond 10 segments.
     const SEEK_LOAD_DELAY = 300; // Allow backend to switch transcoding position.
     const INITIAL_SEEK_SETTLE_TIME = 2000;
+    const SEEK_BUFFER_POLL_INTERVAL = 500;
     const safeStartTime = Number.isFinite(startTime) ? startTime : 0;
     const shouldAutoPlay = resumePlayback;
     let lastLoadedFrag = null;
@@ -787,6 +788,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         const segmentDistance = getSegmentDistance(targetFrag, seekTime);
         const shouldLock = segmentDistance >= SEEK_SEGMENT_THRESHOLD;
 
+        // Capture pre-pause state so we can resume once the target segment buffers.
         const wasPlaying = !overlayVideoContainer.paused;
         pendingSeekTime = seekTime;
 
@@ -801,7 +803,6 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         clearSeekBufferTimer();
         clearSeekedHandler();
         seekedHandler = () => {
-            clearSeekedHandler();
             if (!tryResumeFromSeek() && pendingSeekTime !== null) {
                 seekBufferTimer = setInterval(() => {
                     if (pendingSeekTime === null) {
@@ -811,10 +812,11 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                     if (tryResumeFromSeek()) {
                         clearSeekBufferTimer();
                     }
-                }, 250);
+                }, SEEK_BUFFER_POLL_INTERVAL);
             }
+            seekedHandler = null;
         };
-        overlayVideoContainer.addEventListener('seeked', seekedHandler);
+        overlayVideoContainer.addEventListener('seeked', seekedHandler, { once: true });
         setTimeout(() => {
             try {
                 overlayHls.startLoad(seekTime);
