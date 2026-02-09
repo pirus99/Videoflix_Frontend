@@ -677,6 +677,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
     const SEEK_SEGMENT_THRESHOLD = 10; // Backend cancels transcoding beyond 10 segments.
     const SEEK_LOAD_DELAY = 300; // Allow backend to switch transcoding position.
+    const INITIAL_SEEK_SETTLE_TIME = 2000;
     const safeStartTime = Number.isFinite(startTime) ? startTime : 0;
     const shouldAutoPlay = resumePlayback;
     let lastLoadedFrag = null;
@@ -715,13 +716,13 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return Math.abs(targetFrag.sn - lastLoadedFrag.sn);
         }
         if (!lastLoadedFrag && targetFrag?.sn !== undefined) {
-            return targetFrag.sn;
+            return Math.abs(targetFrag.sn);
         }
         if (!lastLoadedFrag) {
             return 0;
         }
         const details = getLevelDetails();
-        const estimatedSegmentDuration = details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration; // Hls.js LevelDetails uses targetduration.
+        const estimatedSegmentDuration = details?.targetDuration || details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration; // Support Hls.js target duration naming.
         if (!estimatedSegmentDuration) {
             console.warn('Segment duration unavailable for seek distance.');
             return 0;
@@ -760,7 +761,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             try {
                 overlayHls.startLoad(seekTime);
             } catch (error) {
-                console.error('Failed to restart overlay load after seek.', error);
+                console.error('Failed to restart overlay load after seek.', { seekTime, error });
             }
         }, SEEK_LOAD_DELAY);
     };
@@ -818,7 +819,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                     overlayVideoContainer.removeEventListener('seeked', resetIgnoreSeek);
                 };
                 overlayVideoContainer.addEventListener('seeked', resetIgnoreSeek);
-                ignoreSeekResetTimer = setTimeout(resetIgnoreSeek, 2000);
+                ignoreSeekResetTimer = setTimeout(resetIgnoreSeek, INITIAL_SEEK_SETTLE_TIME);
                 overlayVideoContainer.currentTime = safeStartTime;
             };
 
