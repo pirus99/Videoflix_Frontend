@@ -839,6 +839,18 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }, SEEK_LOAD_DELAY);
     };
 
+    overlayHls.on(Hls.Events.FRAG_LOADING, (event, data) => {
+        if (pendingSeekTime !== null || !lastLoadedFrag || typeof lastLoadedFrag.sn !== 'number') {
+            return;
+        }
+        const expectedSn = lastLoadedFrag.sn + 1;
+        if (data.frag?.sn > expectedSn) {
+            const expectedTime = lastLoadedFrag.start + lastLoadedFrag.duration;
+            overlayHls.stopLoad();
+            setTimeout(() => overlayHls.startLoad(expectedTime), SEEK_LOAD_DELAY);
+        }
+    });
+
     overlayHls.on(Hls.Events.FRAG_LOADED, (event, data) => {
         lastLoadedFrag = data.frag;
     });
