@@ -832,8 +832,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     }
 
     function shouldResumeOnRestart() {
-        // Resume if the user hasn't paused, or if a previous seek resume was pending.
-        return !userPaused && (!overlayVideoContainer.paused || resumeAfterSeek);
+        // Resume if the user hasn't paused playback.
+        return !userPaused;
     }
 
     setControlsLocked(false);
@@ -872,7 +872,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         const seekTime = overlayVideoContainer.currentTime;
         const shouldResume = shouldResumeOnRestart();
 
-        // Restart the overlay player for reliable seek handling.
+        // Restart the overlay player for reliable seek handling when a video is active.
         if (currentVideo) {
             clearSeekState();
             if (overlayHls) {
@@ -885,6 +885,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             });
             return;
         }
+
+        // Fallback to in-place seek handling if no current video is tracked.
         const targetFrag = getFragmentForTime(seekTime);
         const segmentDistance = getSegmentDistance(targetFrag, seekTime);
         const shouldLock = segmentDistance >= SEEK_SEGMENT_THRESHOLD;
