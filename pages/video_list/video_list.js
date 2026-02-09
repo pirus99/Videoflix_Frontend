@@ -801,8 +801,9 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
         overlayHls.stopLoad();
         clearSeekBufferTimer();
-        clearSeekedHandler();
+        clearSeekedHandler(); // Ensure only one seeked handler for rapid consecutive seeks.
         seekedHandler = () => {
+            clearSeekBufferTimer();
             if (!tryResumeFromSeek() && pendingSeekTime !== null) {
                 seekBufferTimer = setInterval(() => {
                     if (pendingSeekTime === null) {
