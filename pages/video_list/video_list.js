@@ -1,7 +1,7 @@
 let overlayHls = null;
 let NEWEST = document.getElementById('newest')
 
-const EOS_RECOVERY_THROTTLE_MS = 2000;
+const BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS = 2000;
 const END_OF_VIDEO_THRESHOLD_SECONDS = 0.5;
 
 /**
@@ -271,14 +271,14 @@ async function attemptPlayback(videoElement, maxRetries = 10, retryDelay = 500) 
 }
 
 /**
- * Attempts to recover playback when buffer reports end-of-stream prematurely.
+ * Attempts to recover playback when buffer reports end-of-stream before actual media end.
  * @param {Hls} hlsInstance - The HLS.js instance.
  * @param {HTMLVideoElement} videoElement - The video element to resume.
- * @param {{last: number}} recoveryState - Tracks last recovery timestamp.
+ * @param {{last: number}} recoveryState - Tracks last recovery timestamp (Date.now()).
  */
-function recoverFromBufferEos(hlsInstance, videoElement, recoveryState) {
+function recoverFromBufferEOS(hlsInstance, videoElement, recoveryState) {
     const now = Date.now();
-    if (now - recoveryState.last < EOS_RECOVERY_THROTTLE_MS || videoElement.ended) {
+    if (now - recoveryState.last < BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS || videoElement.ended) {
         return;
     }
     if (Number.isFinite(videoElement.duration)
@@ -351,7 +351,7 @@ function setupHlsErrorHandling(hlsInstance, videoElement, reloadCallback) {
     // Handle buffer stalls gracefully
     hlsInstance.on(Hls.Events.BUFFER_EOS, () => {
         console.log("Buffer end of stream reached");
-        recoverFromBufferEos(hlsInstance, videoElement, eosRecoveryState);
+        recoverFromBufferEOS(hlsInstance, videoElement, eosRecoveryState);
     });
 
     // Reset recovery counter on successful playback
@@ -1028,7 +1028,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     });
 
     overlayHls.on(Hls.Events.BUFFER_EOS, () => {
-        recoverFromBufferEos(overlayHls, overlayVideoContainer, overlayEosRecoveryState);
+        recoverFromBufferEOS(overlayHls, overlayVideoContainer, overlayEosRecoveryState);
     });
 
     overlayHls.on(Hls.Events.ERROR, (event, data) => {
