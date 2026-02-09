@@ -765,6 +765,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             attemptPlayback(overlayVideoContainer);
         }
         resumeAfterSeek = false;
+        // True indicates playback can resume after the buffered seek.
         return true;
     }
 
@@ -924,9 +925,6 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     });
 
     overlayHls.on(Hls.Events.FRAG_LOADED, (event, data) => {
-        if (enforceSequentialLoad(data.frag)) {
-            return;
-        }
         lastEnforcedSn = null;
         lastLoadedFrag = data.frag;
     });
