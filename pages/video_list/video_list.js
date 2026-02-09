@@ -1,4 +1,11 @@
 let overlayHls = null;
+const OVERLAY_SEGMENT_GAP_LIMIT = 5;
+const OVERLAY_SEGMENT_RETRY_DELAY = 1000;
+let overlayPendingSeekTime = null;
+let overlayWaitingForSeekSegment = false;
+let overlayRetryTimeoutId = null;
+let overlayLastRequestedFrag = null;
+let overlayIgnoreGapCheck = true;
 let NEWEST = document.getElementById('newest')
 
 /**
@@ -237,15 +244,12 @@ async function doRefresh() {
 }
 
 /**
- * Loads and plays a video using HLS.js.
- * @param {number} id - The video ID.
- * @param {string} resolution - The desired video resolution (e.g., '480p').
+ * Builds the base HLS.js configuration with optional overrides.
+ * @param {Object} overrides - Optional HLS configuration overrides.
+ * @returns {Object} The merged HLS configuration.
  */
-function loadVideo(id, resolution) {
-    if (hls) {
-        hls.destroy();
-    }
-    hls = new Hls({
+function buildHlsConfig(overrides = {}) {
+    return {
         xhrSetup: function (xhr) {
             xhr.withCredentials = true
         },
@@ -307,24 +311,56 @@ function loadVideo(id, resolution) {
         // METADATA-CONFIGURATION
         enableDateRangeMetadataCues: false,
         enableEmsgMetadataCues: false,
-        enableID3MetadataCues: false
-    });
-    hls.loadSource(`${API_BASE_URL}${URL_TO_INDEX_M3U8(id, resolution)}`);
-    hls.attachMedia(videoContainer);
+        enableID3MetadataCues: false,
+        ...overrides
+    };
+}
 
-    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+/**
+ * Initializes an HLS.js player for the given media element and source.
+ * @param {HTMLVideoElement} mediaElement - The target media element.
+ * @param {string} sourceUrl - The HLS source URL.
+ * @param {Object} configOverrides - Optional HLS configuration overrides.
+ * @param {string} playMessage - Console message when autoplay is blocked.
+ * @returns {Hls} The initialized HLS instance.
+ */
+function initializeHlsPlayer(mediaElement, sourceUrl, configOverrides = {}, playMessage = 'User interaction required to start playback') {
+    const hlsInstance = new Hls(buildHlsConfig(configOverrides));
+    hlsInstance.loadSource(sourceUrl);
+    hlsInstance.attachMedia(mediaElement);
+
+    hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
         setTimeout(() => {
-            videoContainer.play().catch(() => {
-                console.log("User interaction required to start playback");
+            mediaElement.play().catch(() => {
+                console.log(playMessage);
             });
         }, 2000)
     });
 
-    hls.on(Hls.Events.ERROR, (event, data) => {
+    hlsInstance.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
             console.error("HLS fatal error:", data);
         }
     });
+
+    return hlsInstance;
+}
+
+/**
+ * Loads and plays a video using HLS.js.
+ * @param {number} id - The video ID.
+ * @param {string} resolution - The desired video resolution (e.g., '480p').
+ */
+function loadVideo(id, resolution) {
+    if (hls) {
+        hls.destroy();
+    }
+    hls = initializeHlsPlayer(
+        videoContainer,
+        `${API_BASE_URL}${URL_TO_INDEX_M3U8(id, resolution)}`,
+        {},
+        "User interaction required to start playback"
+    );
 }
 
 /**
@@ -378,96 +414,173 @@ function updateAllScrollIndicators() {
 }
 
 /**
+ * Clears any pending overlay segment retry timeout.
+ */
+function clearOverlayRetryTimeout() {
+    if (overlayRetryTimeoutId) {
+        clearTimeout(overlayRetryTimeoutId);
+        overlayRetryTimeoutId = null;
+    }
+}
+
+/**
+ * Resets overlay playback tracking state.
+ */
+function resetOverlayPlaybackState() {
+    clearOverlayRetryTimeout();
+    overlayPendingSeekTime = null;
+    overlayWaitingForSeekSegment = false;
+    overlayLastRequestedFrag = null;
+    overlayIgnoreGapCheck = true;
+}
+
+/**
+ * Schedules a retry for the given overlay segment start time.
+ * @param {number} startTime - The start time of the segment to retry.
+ */
+function scheduleOverlaySegmentRetry(startTime) {
+    if (!overlayHls) {
+        return;
+    }
+    clearOverlayRetryTimeout();
+    overlayIgnoreGapCheck = true;
+    overlayHls.stopLoad();
+    overlayRetryTimeoutId = setTimeout(() => {
+        overlayRetryTimeoutId = null;
+        if (overlayHls) {
+            overlayHls.startLoad(startTime);
+        }
+    }, OVERLAY_SEGMENT_RETRY_DELAY);
+}
+
+/**
+ * Handles overlay seek events by restarting load at the requested time.
+ */
+function handleOverlaySeeking() {
+    if (!overlayHls || !overlayVideoContainer) {
+        return;
+    }
+    overlayPendingSeekTime = overlayVideoContainer.currentTime;
+    overlayWaitingForSeekSegment = true;
+    overlayIgnoreGapCheck = true;
+    overlayLastRequestedFrag = null;
+    clearOverlayRetryTimeout();
+    overlayVideoContainer.pause();
+    overlayHls.stopLoad();
+    overlayHls.startLoad(overlayPendingSeekTime);
+}
+
+/**
+ * Tracks overlay fragment loading to prevent large segment jumps.
+ * @param {Event} event - The HLS event.
+ * @param {Object} data - The fragment data payload.
+ */
+function handleOverlayFragmentLoading(event, data) {
+    if (!data.frag || data.frag.type !== 'main') {
+        return;
+    }
+    if (overlayIgnoreGapCheck) {
+        overlayIgnoreGapCheck = false;
+        overlayLastRequestedFrag = data.frag;
+        return;
+    }
+    if (overlayLastRequestedFrag && Math.abs(data.frag.sn - overlayLastRequestedFrag.sn) > OVERLAY_SEGMENT_GAP_LIMIT) {
+        const nextStart = overlayLastRequestedFrag.start + overlayLastRequestedFrag.duration;
+        scheduleOverlaySegmentRetry(nextStart);
+        return;
+    }
+    overlayLastRequestedFrag = data.frag;
+}
+
+/**
+ * Resumes overlay playback once the requested seek segment is buffered.
+ * @param {Event} event - The HLS event.
+ * @param {Object} data - The fragment data payload.
+ */
+function handleOverlayFragmentBuffered(event, data) {
+    if (!overlayWaitingForSeekSegment || overlayPendingSeekTime === null || !data.frag || data.frag.type !== 'main') {
+        return;
+    }
+    const fragStart = data.frag.start;
+    const fragEnd = data.frag.start + data.frag.duration;
+    if (overlayPendingSeekTime >= fragStart && overlayPendingSeekTime <= fragEnd) {
+        overlayWaitingForSeekSegment = false;
+        overlayPendingSeekTime = null;
+        overlayVideoContainer.play().catch(() => {
+            console.log("User interaction required to start overlay playback");
+        });
+    }
+}
+
+/**
+ * Handles overlay fragment load errors by retrying the same segment.
+ * @param {Event} event - The HLS event.
+ * @param {Object} data - The error payload.
+ */
+function handleOverlayHlsError(event, data) {
+    if (!overlayHls || !data.frag || data.frag.type !== 'main') {
+        return;
+    }
+    const isFragmentError = data.type === Hls.ErrorTypes.NETWORK_ERROR
+        && (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR || data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT);
+    if (!isFragmentError) {
+        return;
+    }
+    const statusCode = data.response ? data.response.code : null;
+    if (!statusCode || statusCode === 404 || statusCode >= 500) {
+        scheduleOverlaySegmentRetry(data.frag.start);
+    }
+}
+
+/**
+ * Attaches overlay-specific playback handlers.
+ */
+function attachOverlayPlaybackHandlers() {
+    if (!overlayHls || !overlayVideoContainer) {
+        return;
+    }
+    overlayVideoContainer.removeEventListener('seeking', handleOverlaySeeking);
+    overlayVideoContainer.addEventListener('seeking', handleOverlaySeeking);
+    overlayHls.on(Hls.Events.FRAG_LOADING, handleOverlayFragmentLoading);
+    overlayHls.on(Hls.Events.FRAG_BUFFERED, handleOverlayFragmentBuffered);
+    overlayHls.on(Hls.Events.ERROR, handleOverlayHlsError);
+}
+
+/**
+ * Detaches overlay-specific playback handlers.
+ */
+function detachOverlayPlaybackHandlers() {
+    if (overlayVideoContainer) {
+        overlayVideoContainer.removeEventListener('seeking', handleOverlaySeeking);
+    }
+    if (overlayHls) {
+        overlayHls.off(Hls.Events.FRAG_LOADING, handleOverlayFragmentLoading);
+        overlayHls.off(Hls.Events.FRAG_BUFFERED, handleOverlayFragmentBuffered);
+        overlayHls.off(Hls.Events.ERROR, handleOverlayHlsError);
+    }
+}
+
+/**
  * Loads a video in the overlay using HLS.js.
  * @param {number} id - The video ID.
  * @param {string} resolution - The desired resolution.
  */
 function loadVideoInOverlay(id, resolution) {
     if (overlayHls) {
+        detachOverlayPlaybackHandlers();
         overlayHls.destroy();
     }
-
-    overlayHls = new Hls({
-        xhrSetup: function (xhr) {
-            xhr.withCredentials = true
+    resetOverlayPlaybackState();
+    overlayHls = initializeHlsPlayer(
+        overlayVideoContainer,
+        `${API_BASE_URL}${URL_TO_INDEX_M3U8(id, resolution)}`,
+        {
+            maxMaxBufferLength: 45,
+            startFragPrefetch: false
         },
-        // BUFFER-MANAGEMENT
-        maxBufferLength: 45,
-        maxMaxBufferLength: 900,
-        maxBufferSize: 90 * 1000 * 1000,
-        maxBufferHole: 0.5,
-        backBufferLength: 90,
-
-        // STALL-DETECTION
-        lowBufferWatchdogPeriod: 0.5,
-        highBufferWatchdogPeriod: 2,
-        nudgeOffset: 0.1,
-        nudgeMaxRetry: 3,
-        maxFragLookUpTolerance: 0.25,
-
-        // PERFORMANCE
-        enableWorker: true,
-        startFragPrefetch: true,
-        testBandwidth: true,
-        enableSoftwareAES: true,
-
-        // SEEK
-        maxSeekHole: 2,
-        seekHoleNudgeDuration: 0.01,
-
-        // NETWORK-CONFIGURATION
-        manifestLoadingTimeOut: 10000,
-        manifestLoadingMaxRetry: 4,
-        levelLoadingTimeOut: 10000,
-        levelLoadingMaxRetry: 4,
-        fragLoadingTimeOut: 20000,
-        fragLoadingMaxRetry: 6,
-
-        // APPEND-CONFIGURATION
-        appendErrorMaxRetry: 3,
-        loaderMaxRetry: 2,
-        loaderMaxRetryTimeout: 64000,
-
-        // ADVANCED SETTINGS
-        lowLatencyMode: false,
-        enableCEA708Captions: false,
-        stretchShortVideoTrack: false,
-        forceKeyFrameOnDiscontinuity: true,
-
-        // LIVE-STREAM-CONFIGURATION
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 10,
-        liveDurationInfinity: false,
-
-        // FRAGMENT-DRIFT-TOLERANCE
-        maxAudioFramesDrift: 1,
-        maxVideoFramesDrift: 1,
-
-        // DEBUG
-        debug: false,
-
-        // METADATA-CONFIGURATION
-        enableDateRangeMetadataCues: false,
-        enableEmsgMetadataCues: false,
-        enableID3MetadataCues: false
-    });
-
-    overlayHls.loadSource(`${API_BASE_URL}${URL_TO_INDEX_M3U8(id, resolution)}`);
-    overlayHls.attachMedia(overlayVideoContainer);
-
-    overlayHls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setTimeout(() => {
-            overlayVideoContainer.play().catch(() => {
-            console.log("User interaction required to start overlay playback");
-        });
-        }, 2000)
-    });
-
-    overlayHls.on(Hls.Events.ERROR, (event, data) => {
-        if (data.fatal) {
-            console.error("HLS fatal error:", data);
-        }
-    });
+        "User interaction required to start overlay playback"
+    );
+    attachOverlayPlaybackHandlers();
 }
 
 /**
@@ -502,10 +615,12 @@ function closeVideoOverlay() {
 
     showHeader();
 
+    detachOverlayPlaybackHandlers();
     if (overlayHls) {
         overlayHls.destroy();
         overlayHls = null;
     }
+    resetOverlayPlaybackState();
 
     overlayVideoContainer.pause();
     overlayVideoContainer.src = '';
