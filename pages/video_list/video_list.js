@@ -860,12 +860,11 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         const seekTime = overlayVideoContainer.currentTime;
-        const shouldResume = !userPaused && !overlayVideoContainer.paused;
+        const shouldResume = !userPaused && (!overlayVideoContainer.paused || resumeAfterSeek);
 
         // Restart the overlay player for reliable seek handling.
         if (currentVideo) {
             resetSeekTracking();
-            pendingSeekTime = null;
             if (overlayHls) {
                 overlayHls.destroy();
                 overlayHls = null;
@@ -874,6 +873,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                 startTime: seekTime,
                 resumePlayback: shouldResume
             });
+            pendingSeekTime = null;
             return;
         }
         const targetFrag = getFragmentForTime(seekTime);
