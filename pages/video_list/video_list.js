@@ -855,7 +855,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         const seekTime = overlayVideoContainer.currentTime;
-        const shouldResume = shouldResumeAfterSeek();
+        const shouldResume = !userPaused && !overlayVideoContainer.paused;
 
         // Restart the overlay player for reliable seek handling.
         if (currentVideo) {
