@@ -837,7 +837,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     }
 
     setControlsLocked(false);
-    // Replace handlers on re-init; overlay player owns these listeners.
+    // Replace handlers on re-init; these are the sole overlay player listeners.
     overlayVideoContainer.onemptied = () => {
         clearSeekState();
     };
@@ -872,7 +872,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         const seekTime = overlayVideoContainer.currentTime;
         const shouldResume = shouldResumePlaybackAfterSeek();
 
-        // Restart the overlay player for reliable seek handling when a video is active.
+        // Restart the overlay player for reliable seek handling when transcoding is delayed.
         if (currentVideo) {
             clearSeekState();
             if (overlayHls) {
