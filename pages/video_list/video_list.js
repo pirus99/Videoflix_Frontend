@@ -806,16 +806,12 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                 seekBufferTimer = setInterval(() => {
                     if (pendingSeekTime === null) {
                         clearSeekBufferTimer();
-                        seekedHandler = null;
                         return;
                     }
                     if (tryResumeFromSeek()) {
                         clearSeekBufferTimer();
-                        seekedHandler = null;
                     }
                 }, 250);
-            } else {
-                seekedHandler = null;
             }
         };
         overlayVideoContainer.addEventListener('seeked', seekedHandler);
