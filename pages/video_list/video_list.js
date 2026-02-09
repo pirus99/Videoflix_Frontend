@@ -732,6 +732,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let programmaticPlay = false;
     let lastEnforcedSn = null;
     const overlayEosRecoveryState = { last: 0 };
+    let postStartBufferingEnabled = false;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -900,6 +901,17 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             && pendingSeekTime === null) {
             userPaused = true;
         }
+    };
+    overlayVideoContainer.onplaying = () => {
+        if (postStartBufferingEnabled || !overlayHls) {
+            return;
+        }
+        postStartBufferingEnabled = true;
+        // Increase buffer targets after playback starts to reduce rebuffering.
+        overlayHls.config.maxBufferLength = Math.max(overlayHls.config.maxBufferLength, 90);
+        overlayHls.config.maxMaxBufferLength = Math.max(overlayHls.config.maxMaxBufferLength, 180);
+        overlayHls.config.maxBufferSize = Math.max(overlayHls.config.maxBufferSize, 120 * 1000 * 1000);
+        overlayHls.config.backBufferLength = Math.max(overlayHls.config.backBufferLength || 0, 60);
     };
 
     overlayVideoContainer.onseeking = () => {
