@@ -3,6 +3,10 @@ const NEWEST_ELEMENT = document.getElementById('newest');
 
 const BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS = 2000;
 const END_OF_VIDEO_THRESHOLD_SECONDS = 0.5;
+const OVERLAY_POST_PLAY_BUFFER_LENGTH = 90;
+const OVERLAY_POST_PLAY_MAX_BUFFER_LENGTH = 180;
+const OVERLAY_POST_PLAY_BUFFER_SIZE = 120 * 1000 * 1000;
+const OVERLAY_POST_PLAY_BACK_BUFFER = 60;
 
 /**
  * Shared HLS.js configuration optimized for on-demand transcoding scenarios.
@@ -908,10 +912,10 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
         postStartBufferingEnabled = true;
         // Increase buffer targets after playback starts to reduce rebuffering.
-        overlayHls.config.maxBufferLength = Math.max(overlayHls.config.maxBufferLength, 90);
-        overlayHls.config.maxMaxBufferLength = Math.max(overlayHls.config.maxMaxBufferLength, 180);
-        overlayHls.config.maxBufferSize = Math.max(overlayHls.config.maxBufferSize, 120 * 1000 * 1000);
-        overlayHls.config.backBufferLength = Math.max(overlayHls.config.backBufferLength || 0, 60);
+        overlayHls.config.maxBufferLength = Math.max(overlayHls.config.maxBufferLength, OVERLAY_POST_PLAY_BUFFER_LENGTH);
+        overlayHls.config.maxMaxBufferLength = Math.max(overlayHls.config.maxMaxBufferLength, OVERLAY_POST_PLAY_MAX_BUFFER_LENGTH);
+        overlayHls.config.maxBufferSize = Math.max(overlayHls.config.maxBufferSize, OVERLAY_POST_PLAY_BUFFER_SIZE);
+        overlayHls.config.backBufferLength = Math.max(overlayHls.config.backBufferLength || 0, OVERLAY_POST_PLAY_BACK_BUFFER);
     };
 
     overlayVideoContainer.onseeking = () => {
