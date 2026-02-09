@@ -761,6 +761,20 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         return true;
     }
 
+    function clearSeekBufferTimer() {
+        if (seekBufferTimer) {
+            clearInterval(seekBufferTimer);
+            seekBufferTimer = null;
+        }
+    }
+
+    function clearSeekedHandler() {
+        if (seekedHandler) {
+            overlayVideoContainer.removeEventListener('seeked', seekedHandler);
+            seekedHandler = null;
+        }
+    }
+
     setControlsLocked(false);
 
     overlayVideoContainer.onseeking = () => {
@@ -784,30 +798,25 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         resumeAfterSeek = wasPlaying;
 
         overlayHls.stopLoad();
-        if (seekBufferTimer) {
-            clearInterval(seekBufferTimer);
-            seekBufferTimer = null;
-        }
-        if (seekedHandler) {
-            overlayVideoContainer.removeEventListener('seeked', seekedHandler);
-            seekedHandler = null;
-        }
+        clearSeekBufferTimer();
+        clearSeekedHandler();
         seekedHandler = () => {
+            clearSeekedHandler();
             if (!tryResumeFromSeek() && pendingSeekTime !== null) {
                 seekBufferTimer = setInterval(() => {
                     if (pendingSeekTime === null) {
-                        clearInterval(seekBufferTimer);
-                        seekBufferTimer = null;
+                        clearSeekBufferTimer();
+                        seekedHandler = null;
                         return;
                     }
                     if (tryResumeFromSeek()) {
-                        clearInterval(seekBufferTimer);
-                        seekBufferTimer = null;
+                        clearSeekBufferTimer();
+                        seekedHandler = null;
                     }
                 }, 250);
+            } else {
+                seekedHandler = null;
             }
-            overlayVideoContainer.removeEventListener('seeked', seekedHandler);
-            seekedHandler = null;
         };
         overlayVideoContainer.addEventListener('seeked', seekedHandler);
         setTimeout(() => {
