@@ -1,5 +1,5 @@
 let overlayHls = null;
-let NEWEST = document.getElementById('newest');
+const NEWEST = document.getElementById('newest');
 
 const BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS = 2000;
 const END_OF_VIDEO_THRESHOLD_SECONDS = 0.5;
@@ -278,18 +278,22 @@ async function attemptPlayback(videoElement, maxRetries = 10, retryDelay = 500) 
  */
 function recoverFromBufferEOS(hlsInstance, videoElement, recoveryState) {
     const now = Date.now();
-    if (now - recoveryState.last <= BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS || videoElement.ended) {
+    if (recoveryState.last > 0 &&
+        now - recoveryState.last < BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS) {
+        return;
+    }
+    if (videoElement.ended) {
         return;
     }
     if (Number.isFinite(videoElement.duration) &&
         videoElement.currentTime >= videoElement.duration - END_OF_VIDEO_THRESHOLD_SECONDS) {
         return;
     }
-    // Restart loading from the current position and attempt to resume playback.
-    recoveryState.last = now;
     if (!hlsInstance || !hlsInstance.media) {
         return;
     }
+    // Restart loading from the current position and attempt to resume playback.
+    recoveryState.last = now;
     try {
         hlsInstance.startLoad(videoElement.currentTime);
         attemptPlayback(videoElement);
