@@ -742,7 +742,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return false;
         }
         for (let i = 0; i < overlayVideoContainer.buffered.length; i++) {
-            if (time >= overlayVideoContainer.buffered.start(i) && time <= overlayVideoContainer.buffered.end(i)) {
+            if (time >= overlayVideoContainer.buffered.start(i) && time < overlayVideoContainer.buffered.end(i)) {
                 return true;
             }
         }
@@ -777,6 +777,10 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     }
 
     setControlsLocked(false);
+    overlayVideoContainer.addEventListener('emptied', () => {
+        clearSeekBufferTimer();
+        clearSeekedHandler();
+    }, { once: true });
 
     overlayVideoContainer.onseeking = () => {
         if (ignoreSeekEvent) {
