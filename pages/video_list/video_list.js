@@ -916,6 +916,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         overlayHls.config.maxBufferLength = Math.max(overlayHls.config.maxBufferLength, OVERLAY_POST_PLAY_BUFFER_LENGTH);
         overlayHls.config.maxMaxBufferLength = Math.max(overlayHls.config.maxMaxBufferLength, OVERLAY_POST_PLAY_MAX_BUFFER_LENGTH);
         overlayHls.config.maxBufferSize = Math.max(overlayHls.config.maxBufferSize, OVERLAY_POST_PLAY_BUFFER_SIZE);
+        // backBufferLength can be undefined in HLS.js configs, so guard with nullish coalescing.
         overlayHls.config.backBufferLength = Math.max(overlayHls.config.backBufferLength ?? 0, OVERLAY_POST_PLAY_BACK_BUFFER);
     };
 
