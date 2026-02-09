@@ -773,8 +773,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     function isOutOfOrderFragment(frag) {
         return pendingSeekTime === null
             && lastLoadedFrag
-            && typeof lastLoadedFrag.sn === 'number'
-            && typeof frag.sn === 'number'
+            && Number.isFinite(lastLoadedFrag.sn)
+            && Number.isFinite(frag.sn)
             && frag.sn > lastLoadedFrag.sn + 1;
     }
 
@@ -929,7 +929,6 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (isOutOfOrderFragment(data.frag)) {
             return;
         }
-        lastEnforcedSn = null;
         lastLoadedFrag = data.frag;
     });
 
@@ -937,7 +936,9 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (enforceSequentialLoad(data.frag)) {
             return;
         }
-        if (pendingSeekTime !== null && data.frag.start > pendingSeekTime) {
+        if (pendingSeekTime !== null
+            && Number.isFinite(data.frag.start)
+            && data.frag.start > pendingSeekTime) {
             // Ignore fragments beyond the requested seek; we'll retry from the target time instead.
             return;
         }
