@@ -276,6 +276,7 @@ async function attemptPlayback(videoElement, maxRetries = 10, retryDelay = 500) 
 function setupHlsErrorHandling(hlsInstance, videoElement, reloadCallback) {
     let recoverAttempts = 0;
     const maxRecoverAttempts = 3;
+    let lastEosRecovery = 0;
 
     hlsInstance.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
@@ -326,6 +327,16 @@ function setupHlsErrorHandling(hlsInstance, videoElement, reloadCallback) {
     // Handle buffer stalls gracefully
     hlsInstance.on(Hls.Events.BUFFER_EOS, () => {
         console.log("Buffer end of stream reached");
+        const now = Date.now();
+        if (now - lastEosRecovery < 2000 || videoElement.ended) {
+            return;
+        }
+        if (Number.isFinite(videoElement.duration) && videoElement.currentTime >= videoElement.duration - 0.5) {
+            return;
+        }
+        lastEosRecovery = now;
+        hlsInstance.startLoad(videoElement.currentTime);
+        attemptPlayback(videoElement);
     });
 
     // Reset recovery counter on successful playback
@@ -694,6 +705,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let programmaticPause = false;
     let programmaticPlay = false;
     let lastEnforcedSn = null;
+    let lastOverlayEosRecovery = 0;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -869,7 +881,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return;
         }
 
-        const seekTime = overlayVideoContainer.currentTime;
+    const seekTime = overlayVideoContainer.currentTime;
         const shouldResume = shouldResumePlaybackAfterSeek();
 
         // Restart the overlay player for reliable seek handling when transcoding is delayed.
@@ -998,6 +1010,20 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             }
             resumeAfterSeek = false;
         }
+    });
+
+    overlayHls.on(Hls.Events.BUFFER_EOS, () => {
+        const now = Date.now();
+        if (now - lastOverlayEosRecovery < 2000 || overlayVideoContainer.ended) {
+            return;
+        }
+        if (Number.isFinite(overlayVideoContainer.duration)
+            && overlayVideoContainer.currentTime >= overlayVideoContainer.duration - 0.5) {
+            return;
+        }
+        lastOverlayEosRecovery = now;
+        overlayHls.startLoad(overlayVideoContainer.currentTime);
+        attemptPlayback(overlayVideoContainer);
     });
 
     overlayHls.on(Hls.Events.ERROR, (event, data) => {
