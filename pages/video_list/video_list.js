@@ -668,8 +668,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     }
 
     const overlayConfig = getOverlayHlsConfig();
-    const SEGMENT_RETRY_DELAY = 1500;
-    overlayConfig.loader = createOverlaySegmentLoader(SEGMENT_RETRY_DELAY);
+    overlayConfig.loader = createOverlaySegmentLoader();
     overlayHls = new Hls(overlayConfig);
 
     const videoUrl = `${API_BASE_URL}${URL_TO_INDEX_M3U8(id, resolution)}`;
@@ -722,7 +721,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return 0;
         }
         const details = getLevelDetails();
-        const estimatedSegmentDuration = details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration;
+        const estimatedSegmentDuration = details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration; // Hls.js LevelDetails uses targetduration.
         if (!estimatedSegmentDuration) {
             console.warn('Segment duration unavailable for seek distance.');
             return 0;
@@ -805,24 +804,29 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         overlayHls.startLoad(safeStartTime);
 
         if (safeStartTime > 0) {
-            overlayVideoContainer.addEventListener('loadedmetadata', () => {
+            const applyInitialSeek = () => {
                 ignoreSeekEvent = true;
                 if (ignoreSeekResetTimer) {
                     clearTimeout(ignoreSeekResetTimer);
                 }
-                overlayVideoContainer.addEventListener('seeked', () => {
+                const resetIgnoreSeek = () => {
                     if (ignoreSeekResetTimer) {
                         clearTimeout(ignoreSeekResetTimer);
                         ignoreSeekResetTimer = null;
                     }
                     ignoreSeekEvent = false;
-                }, { once: true });
-                ignoreSeekResetTimer = setTimeout(() => {
-                    ignoreSeekEvent = false;
-                    ignoreSeekResetTimer = null;
-                }, 2000);
+                    overlayVideoContainer.removeEventListener('seeked', resetIgnoreSeek);
+                };
+                overlayVideoContainer.addEventListener('seeked', resetIgnoreSeek);
+                ignoreSeekResetTimer = setTimeout(resetIgnoreSeek, 2000);
                 overlayVideoContainer.currentTime = safeStartTime;
-            }, { once: true });
+            };
+
+            if (overlayVideoContainer.readyState >= 1) {
+                applyInitialSeek();
+            } else {
+                overlayVideoContainer.addEventListener('loadedmetadata', applyInitialSeek, { once: true });
+            }
         }
 
         if (shouldAutoPlay) {
