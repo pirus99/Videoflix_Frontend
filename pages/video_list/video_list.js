@@ -879,6 +879,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                 overlayHls.destroy();
                 overlayHls = null;
             }
+            // Restart with the current position and playback intent.
             loadVideoInOverlay(currentVideo, currentResolution, {
                 startTime: seekTime,
                 resumePlayback: shouldResume
