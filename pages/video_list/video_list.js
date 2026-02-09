@@ -1085,8 +1085,10 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         console.log("Manifest parsed, waiting for segments...");
         if (overlayHls.levels && overlayHls.levels.length > 0) {
             overlayHls.autoLevelEnabled = false;
-            overlayHls.currentLevel = 0;
-            overlayHls.nextLevel = 0;
+            const levelIndex = overlayHls.levels.findIndex(level => level?.height && currentResolution?.includes(`${level.height}p`));
+            const resolvedLevel = levelIndex >= 0 ? levelIndex : 0;
+            overlayHls.currentLevel = resolvedLevel;
+            overlayHls.nextLevel = resolvedLevel;
         }
         overlayHls.startLoad(safeStartTime);
 
