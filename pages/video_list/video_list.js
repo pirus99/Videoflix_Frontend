@@ -803,8 +803,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             programmaticPause = false;
             return;
         }
-        if (!programmaticPause
-            && !programmaticPlay
+        if (!programmaticPlay
             && !overlayVideoContainer.seeking
             && pendingSeekTime === null) {
             userPaused = true;
@@ -829,7 +828,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         // Capture pre-pause state so we can resume once the target segment buffers.
-        const wasPlaying = !userPaused;
+        const wasPlaying = !userPaused && (resumeAfterSeek || !overlayVideoContainer.paused);
         programmaticPause = true;
         overlayVideoContainer.pause();
         resumeAfterSeek = wasPlaying;
