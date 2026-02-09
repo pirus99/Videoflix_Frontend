@@ -1,4 +1,5 @@
 let overlayHls = null;
+const MANIFEST_AUTOPLAY_DELAY = 2000;
 const OVERLAY_SEGMENT_GAP_LIMIT = 5;
 const OVERLAY_SEGMENT_RETRY_DELAY = 1000;
 let overlayPendingSeekTime = null;
@@ -6,7 +7,7 @@ let overlayWaitingForSeekSegment = false;
 let overlayRetryTimeoutId = null;
 let overlayLastRequestedFrag = null;
 let overlayIgnoreGapCheck = true;
-let NEWEST = document.getElementById('newest')
+const NEWEST = document.getElementById('newest')
 
 /**
  * Scrolls a video list container horizontally.
@@ -334,7 +335,7 @@ function initializeHlsPlayer(mediaElement, sourceUrl, configOverrides = {}, play
             mediaElement.play().catch(() => {
                 console.log(playMessage);
             });
-        }, 2000)
+        }, MANIFEST_AUTOPLAY_DELAY)
     });
 
     hlsInstance.on(Hls.Events.ERROR, (event, data) => {
@@ -484,6 +485,7 @@ function handleOverlayFragmentLoading(event, data) {
         overlayLastRequestedFrag = data.frag;
         return;
     }
+    // Guard against HLS jumping ahead when a segment is missing by enforcing sequential loads.
     if (overlayLastRequestedFrag && Math.abs(data.frag.sn - overlayLastRequestedFrag.sn) > OVERLAY_SEGMENT_GAP_LIMIT) {
         const nextStart = overlayLastRequestedFrag.start + overlayLastRequestedFrag.duration;
         scheduleOverlaySegmentRetry(nextStart);
