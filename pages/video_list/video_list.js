@@ -768,7 +768,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         return true;
     }
 
-    function isOutOfOrderFrag(frag) {
+    function isOutOfOrderFragment(frag) {
         return pendingSeekTime === null
             && lastLoadedFrag
             && typeof lastLoadedFrag.sn === 'number'
@@ -777,10 +777,11 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     }
 
     function enforceSequentialLoad(frag) {
-        if (!isOutOfOrderFrag(frag)) {
+        if (!isOutOfOrderFragment(frag)) {
             return false;
         }
         if (lastEnforcedSn === frag.sn) {
+            // Already enforced this fragment; avoid repeating load restarts.
             return true;
         }
         if (typeof lastLoadedFrag.start !== 'number' || typeof lastLoadedFrag.duration !== 'number') {
