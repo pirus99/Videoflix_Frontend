@@ -271,6 +271,27 @@ async function attemptPlayback(videoElement, maxRetries = 10, retryDelay = 500) 
 }
 
 /**
+ * Attempts to recover playback when buffer reports end-of-stream prematurely.
+ * @param {Hls} hlsInstance - The HLS.js instance.
+ * @param {HTMLVideoElement} videoElement - The video element to resume.
+ * @param {{last: number}} recoveryState - Tracks last recovery timestamp.
+ */
+function recoverFromBufferEos(hlsInstance, videoElement, recoveryState) {
+    const now = Date.now();
+    if (now - recoveryState.last < EOS_RECOVERY_THROTTLE_MS || videoElement.ended) {
+        return;
+    }
+    if (Number.isFinite(videoElement.duration)
+        && videoElement.currentTime >= videoElement.duration - END_OF_VIDEO_THRESHOLD_SECONDS) {
+        return;
+    }
+    // Restart loading from the current position and attempt to resume playback.
+    recoveryState.last = now;
+    hlsInstance.startLoad(videoElement.currentTime);
+    attemptPlayback(videoElement);
+}
+
+/**
  * Sets up common HLS error handling with recovery logic.
  * @param {Hls} hlsInstance - The HLS.js instance.
  * @param {HTMLVideoElement} videoElement - The associated video element.
@@ -279,7 +300,7 @@ async function attemptPlayback(videoElement, maxRetries = 10, retryDelay = 500) 
 function setupHlsErrorHandling(hlsInstance, videoElement, reloadCallback) {
     let recoverAttempts = 0;
     const maxRecoverAttempts = 3;
-    let lastEosRecovery = 0;
+    const eosRecoveryState = { last: 0 };
 
     hlsInstance.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
@@ -330,17 +351,7 @@ function setupHlsErrorHandling(hlsInstance, videoElement, reloadCallback) {
     // Handle buffer stalls gracefully
     hlsInstance.on(Hls.Events.BUFFER_EOS, () => {
         console.log("Buffer end of stream reached");
-        const now = Date.now();
-        if (now - lastEosRecovery < EOS_RECOVERY_THROTTLE_MS || videoElement.ended) {
-            return;
-        }
-        if (Number.isFinite(videoElement.duration)
-            && videoElement.currentTime >= videoElement.duration - END_OF_VIDEO_THRESHOLD_SECONDS) {
-            return;
-        }
-        lastEosRecovery = now;
-        hlsInstance.startLoad(videoElement.currentTime);
-        attemptPlayback(videoElement);
+        recoverFromBufferEos(hlsInstance, videoElement, eosRecoveryState);
     });
 
     // Reset recovery counter on successful playback
@@ -709,7 +720,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let programmaticPause = false;
     let programmaticPlay = false;
     let lastEnforcedSn = null;
-    let lastOverlayEosRecovery = 0;
+    const overlayEosRecoveryState = { last: 0 };
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -1017,17 +1028,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     });
 
     overlayHls.on(Hls.Events.BUFFER_EOS, () => {
-        const now = Date.now();
-        if (now - lastOverlayEosRecovery < EOS_RECOVERY_THROTTLE_MS || overlayVideoContainer.ended) {
-            return;
-        }
-        if (Number.isFinite(overlayVideoContainer.duration)
-            && overlayVideoContainer.currentTime >= overlayVideoContainer.duration - END_OF_VIDEO_THRESHOLD_SECONDS) {
-            return;
-        }
-        lastOverlayEosRecovery = now;
-        overlayHls.startLoad(overlayVideoContainer.currentTime);
-        attemptPlayback(overlayVideoContainer);
+        recoverFromBufferEos(overlayHls, overlayVideoContainer, overlayEosRecoveryState);
     });
 
     overlayHls.on(Hls.Events.ERROR, (event, data) => {
