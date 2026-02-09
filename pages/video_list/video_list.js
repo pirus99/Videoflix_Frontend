@@ -690,6 +690,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let ignoreSeekResetTimer = null;
     let seekBufferTimer = null;
     let seekedHandler = null;
+    let lastPlaybackState = false;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -788,6 +789,14 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             overlayVideoContainer.pause();
         }
     });
+    overlayVideoContainer.addEventListener('playing', () => {
+        lastPlaybackState = true;
+    });
+    overlayVideoContainer.addEventListener('pause', () => {
+        if (!overlayVideoContainer.seeking && pendingSeekTime === null) {
+            lastPlaybackState = false;
+        }
+    });
 
     overlayVideoContainer.onseeking = () => {
         if (ignoreSeekEvent) {
@@ -807,7 +816,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         // Capture pre-pause state so we can resume once the target segment buffers.
-        const wasPlaying = !overlayVideoContainer.paused;
+        const wasPlaying = lastPlaybackState || !overlayVideoContainer.paused;
         overlayVideoContainer.pause();
         resumeAfterSeek = wasPlaying;
 
