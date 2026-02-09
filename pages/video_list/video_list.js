@@ -691,8 +691,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let seekBufferTimer = null;
     let seekedHandler = null;
     let userPaused = false;
-    let programmaticPauseTokens = 0;
-    let programmaticPlayTokens = 0;
+    let programmaticPauseCount = 0;
+    let programmaticPlayCount = 0;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -760,15 +760,15 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         pendingSeekTime = null;
         setControlsLocked(false);
         if (resumeAfterSeek) {
-            programmaticPlayTokens += 1;
+            programmaticPlayCount += 1;
             attemptPlayback(overlayVideoContainer);
         }
         resumeAfterSeek = false;
         return true;
     }
 
-    function shouldTreatAsUserPause() {
-        return !overlayVideoContainer.seeking && pendingSeekTime === null;
+    function isUserPauseContext() {
+        return programmaticPauseCount === 0 && !overlayVideoContainer.seeking && pendingSeekTime === null;
     }
 
     function clearSeekBufferTimer() {
@@ -791,23 +791,23 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         clearSeekedHandler();
     });
     overlayVideoContainer.addEventListener('play', () => {
-        if (programmaticPlayTokens > 0) {
-            programmaticPlayTokens -= 1;
+        if (programmaticPlayCount > 0) {
+            programmaticPlayCount -= 1;
             return;
         }
         userPaused = false;
         if (pendingSeekTime !== null) {
             resumeAfterSeek = true;
-            programmaticPauseTokens += 1;
+            programmaticPauseCount += 1;
             overlayVideoContainer.pause();
         }
     });
     overlayVideoContainer.addEventListener('pause', () => {
-        if (programmaticPauseTokens > 0) {
-            programmaticPauseTokens -= 1;
+        if (programmaticPauseCount > 0) {
+            programmaticPauseCount -= 1;
             return;
         }
-        if (shouldTreatAsUserPause()) {
+        if (isUserPauseContext()) {
             userPaused = true;
         }
     });
@@ -830,8 +830,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         // Capture pre-pause state so we can resume once the target segment buffers.
-        const wasPlaying = !overlayVideoContainer.paused && !userPaused;
-        programmaticPauseTokens += 1;
+        const wasPlaying = !userPaused;
+        programmaticPauseCount += 1;
         overlayVideoContainer.pause();
         resumeAfterSeek = wasPlaying;
 
@@ -905,7 +905,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             pendingSeekTime = null;
             setControlsLocked(false);
             if (resumeAfterSeek) {
-                programmaticPlayTokens += 1;
+                programmaticPlayCount += 1;
                 attemptPlayback(overlayVideoContainer);
             }
             resumeAfterSeek = false;
@@ -963,13 +963,13 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (shouldAutoPlay) {
             setTimeout(() => {
                 if (overlayVideoContainer.readyState >= 2) {
-                    programmaticPlayTokens += 1;
+                    programmaticPlayCount += 1;
                     attemptPlayback(overlayVideoContainer);
                 } else {
                     const checkReady = setInterval(() => {
                         if (overlayVideoContainer.readyState >= 2) {
                             clearInterval(checkReady);
-                            programmaticPlayTokens += 1;
+                            programmaticPlayCount += 1;
                             attemptPlayback(overlayVideoContainer);
                         }
                     }, 500);
