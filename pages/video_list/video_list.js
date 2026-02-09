@@ -888,6 +888,9 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         // Fallback to in-place seek handling if no current video is tracked.
+        if (!overlayHls) {
+            return;
+        }
         const targetFrag = getFragmentForTime(seekTime);
         const segmentDistance = getSegmentDistance(targetFrag, seekTime);
         const shouldLock = segmentDistance >= SEEK_SEGMENT_THRESHOLD;
