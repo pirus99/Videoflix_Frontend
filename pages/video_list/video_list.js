@@ -1101,12 +1101,20 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                 ? preferredIndex
                 : (defaultIndex >= 0 ? defaultIndex : 0);
             if (preferredIndex < 0) {
-                const fallbackLabel = resolvedLevel === defaultIndex && defaultIndex >= 0
-                    ? 'default'
-                    : 'first available';
+                let fallbackLabel = 'first available';
+                if (resolvedLevel === defaultIndex && defaultIndex >= 0) {
+                    fallbackLabel = 'default';
+                }
                 console.log(`Fallback to ${fallbackLabel} quality level (${resolvedLevel}).`);
             }
-            overlayHls.currentLevel = resolvedLevel;
+            const applyManualLevel = () => {
+                overlayHls.currentLevel = resolvedLevel;
+            };
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(applyManualLevel);
+            } else {
+                applyManualLevel();
+            }
         }
         overlayHls.startLoad(safeStartTime);
 
