@@ -822,11 +822,11 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     }
 
     setControlsLocked(false);
-    overlayVideoContainer.addEventListener('emptied', () => {
+    overlayVideoContainer.onemptied = () => {
         clearSeekBufferTimer();
         clearSeekedHandler();
-    });
-    overlayVideoContainer.addEventListener('play', () => {
+    };
+    overlayVideoContainer.onplay = () => {
         if (programmaticPlay) {
             programmaticPlay = false;
             return;
@@ -837,8 +837,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             programmaticPause = true;
             overlayVideoContainer.pause();
         }
-    });
-    overlayVideoContainer.addEventListener('pause', () => {
+    };
+    overlayVideoContainer.onpause = () => {
         if (programmaticPause) {
             programmaticPause = false;
             return;
@@ -847,7 +847,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             && pendingSeekTime === null) {
             userPaused = true;
         }
-    });
+    };
 
     overlayVideoContainer.onseeking = () => {
         if (ignoreSeekEvent) {
@@ -855,6 +855,23 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         const seekTime = overlayVideoContainer.currentTime;
+        const shouldResume = shouldResumeAfterSeek();
+
+        // Restart the overlay player for reliable seek handling.
+        if (currentVideo) {
+            clearSeekBufferTimer();
+            clearSeekedHandler();
+            pendingSeekTime = null;
+            if (overlayHls) {
+                overlayHls.destroy();
+                overlayHls = null;
+            }
+            loadVideoInOverlay(currentVideo, currentResolution, {
+                startTime: seekTime,
+                resumePlayback: shouldResume
+            });
+            return;
+        }
         const targetFrag = getFragmentForTime(seekTime);
         const segmentDistance = getSegmentDistance(targetFrag, seekTime);
         const shouldLock = segmentDistance >= SEEK_SEGMENT_THRESHOLD;
