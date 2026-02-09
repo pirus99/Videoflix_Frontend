@@ -821,10 +821,15 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
     }
 
-    setControlsLocked(false);
-    overlayVideoContainer.onemptied = () => {
+    function resetSeekTracking() {
         clearSeekBufferTimer();
         clearSeekedHandler();
+    }
+
+    setControlsLocked(false);
+    // Replace handlers on re-init to avoid duplicate listeners.
+    overlayVideoContainer.onemptied = () => {
+        resetSeekTracking();
     };
     overlayVideoContainer.onplay = () => {
         if (programmaticPlay) {
@@ -859,8 +864,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
         // Restart the overlay player for reliable seek handling.
         if (currentVideo) {
-            clearSeekBufferTimer();
-            clearSeekedHandler();
+            resetSeekTracking();
             pendingSeekTime = null;
             if (overlayHls) {
                 overlayHls.destroy();
@@ -891,8 +895,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         resumeAfterSeek = wasPlaying;
 
         overlayHls.stopLoad();
-        clearSeekBufferTimer();
-        clearSeekedHandler(); // Ensure only one seeked handler for rapid consecutive seeks.
+        resetSeekTracking(); // Ensure only one seeked handler for rapid consecutive seeks.
         seekedHandler = () => {
             clearSeekBufferTimer();
             if (!tryResumeFromSeek() && pendingSeekTime !== null) {
