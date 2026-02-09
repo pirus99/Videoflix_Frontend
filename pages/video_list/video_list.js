@@ -734,6 +734,18 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         return time >= frag.start && time < frag.start + frag.duration;
     }
 
+    function isTimeBuffered(time) {
+        if (!overlayVideoContainer.buffered) {
+            return false;
+        }
+        for (let i = 0; i < overlayVideoContainer.buffered.length; i++) {
+            if (time >= overlayVideoContainer.buffered.start(i) && time <= overlayVideoContainer.buffered.end(i)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     setControlsLocked(false);
 
     overlayVideoContainer.onseeking = () => {
@@ -746,17 +758,28 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         const segmentDistance = getSegmentDistance(targetFrag, seekTime);
         const shouldLock = segmentDistance >= SEEK_SEGMENT_THRESHOLD;
 
+        resumeAfterSeek = !overlayVideoContainer.paused;
+        pendingSeekTime = seekTime;
+
         if (shouldLock) {
-            resumeAfterSeek = !overlayVideoContainer.paused;
-            pendingSeekTime = seekTime;
             setControlsLocked(true);
-            overlayVideoContainer.pause();
-        } else {
-            pendingSeekTime = null;
-            resumeAfterSeek = false;
+        } else if (!controlsLocked) {
+            setControlsLocked(false);
         }
 
+        overlayVideoContainer.pause();
+
         overlayHls.stopLoad();
+        overlayVideoContainer.addEventListener('seeked', () => {
+            if (pendingSeekTime !== null && isTimeBuffered(pendingSeekTime)) {
+                pendingSeekTime = null;
+                setControlsLocked(false);
+                if (resumeAfterSeek) {
+                    attemptPlayback(overlayVideoContainer);
+                }
+                resumeAfterSeek = false;
+            }
+        }, { once: true });
         setTimeout(() => {
             try {
                 overlayHls.startLoad(seekTime);
