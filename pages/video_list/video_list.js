@@ -714,6 +714,9 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (lastLoadedFrag && targetFrag) {
             return Math.abs(targetFrag.sn - lastLoadedFrag.sn);
         }
+        if (!lastLoadedFrag && targetFrag?.sn !== undefined) {
+            return targetFrag.sn;
+        }
         if (!lastLoadedFrag) {
             return 0;
         }
@@ -721,7 +724,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         const segmentDuration = details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration;
         if (!segmentDuration) {
             console.warn('Segment duration unavailable for seek distance.');
-            return 0;
+            return SEEK_SEGMENT_THRESHOLD;
         }
         return Math.abs(seekTime - lastLoadedFrag.start) / segmentDuration;
     }
@@ -757,7 +760,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             try {
                 overlayHls.startLoad(seekTime);
             } catch (error) {
-                console.error('Failed to restart overlay load after seek.', error);
+                console.error('Failed to restart overlay load after seek. Please retry or refresh the page.', error);
             }
         }, SEEK_LOAD_DELAY);
     };
