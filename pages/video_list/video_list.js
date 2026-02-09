@@ -780,7 +780,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     overlayVideoContainer.addEventListener('emptied', () => {
         clearSeekBufferTimer();
         clearSeekedHandler();
-    }, { once: true });
+    });
 
     overlayVideoContainer.onseeking = () => {
         if (ignoreSeekEvent) {
