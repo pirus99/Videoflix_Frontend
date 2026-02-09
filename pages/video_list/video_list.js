@@ -767,11 +767,12 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             attemptPlayback(overlayVideoContainer);
         }
         resumeAfterSeek = false;
-        // True indicates playback can resume after the buffered seek.
+        // True indicates the buffered seek was handled and state was updated.
         return buffered;
     }
 
     function isOutOfOrderFragment(frag) {
+        // Only enforce strict ordering during normal playback; seeks are handled separately.
         return pendingSeekTime === null
             && lastLoadedFrag
             && Number.isFinite(lastLoadedFrag.sn)
@@ -853,6 +854,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         const segmentDistance = getSegmentDistance(targetFrag, seekTime);
         const shouldLock = segmentDistance >= SEEK_SEGMENT_THRESHOLD;
 
+        lastEnforcedSn = null;
         pendingSeekTime = seekTime;
 
         // Pause for all seeks; lock controls only for large jumps that restart transcoding.
