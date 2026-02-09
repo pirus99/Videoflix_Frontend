@@ -709,6 +709,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     }
 
     const overlayConfig = getOverlayHlsConfig();
+    postStartBufferingEnabled = false;
     overlayConfig.loader = createOverlaySegmentLoader();
     overlayHls = new Hls(overlayConfig);
 
@@ -912,6 +913,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
         postStartBufferingEnabled = true;
         // Increase buffer targets after playback starts to reduce rebuffering.
+        // Preserve any higher configured values to avoid shrinking buffers mid-session.
         overlayHls.config.maxBufferLength = Math.max(overlayHls.config.maxBufferLength, OVERLAY_POST_PLAY_BUFFER_LENGTH);
         overlayHls.config.maxMaxBufferLength = Math.max(overlayHls.config.maxMaxBufferLength, OVERLAY_POST_PLAY_MAX_BUFFER_LENGTH);
         overlayHls.config.maxBufferSize = Math.max(overlayHls.config.maxBufferSize, OVERLAY_POST_PLAY_BUFFER_SIZE);
