@@ -1081,13 +1081,14 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
     });
 
-    const selectedResolution = currentResolution;
     overlayHls.on(Hls.Events.MANIFEST_PARSED, () => {
         console.log("Manifest parsed, waiting for segments...");
         if (overlayHls.levels && overlayHls.levels.length > 0) {
             // Disable auto quality to prevent switches during on-demand transcoding.
             overlayHls.autoLevelEnabled = false;
-            const levelIndex = overlayHls.levels.findIndex(level => level?.height && selectedResolution?.includes(`${level.height}p`));
+            const levelIndex = overlayHls.levels.findIndex(
+                level => level?.height && currentResolution === `${level.height}p`
+            );
             const resolvedLevel = levelIndex >= 0 ? levelIndex : 0;
             overlayHls.currentLevel = resolvedLevel;
             overlayHls.nextLevel = resolvedLevel;
