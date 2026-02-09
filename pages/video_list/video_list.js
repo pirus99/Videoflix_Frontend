@@ -1087,14 +1087,16 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (overlayHls.levels && overlayHls.levels.length > 0) {
             // Disable auto quality to avoid switches during on-demand transcoding; users can choose manually.
             overlayHls.autoLevelEnabled = false;
-            const activeResolution = currentResolution || DEFAULT_RESOLUTION;
-            const levelIndex = overlayHls.levels.findIndex(
-                level => level && typeof level.height === 'number' && activeResolution === `${level.height}p`
-            );
-            if (levelIndex < 0) {
-                console.log('Fallback to default quality level (0).');
+            const preferredResolution = currentResolution || DEFAULT_RESOLUTION;
+            const preferredIndex = findLevelByResolution(overlayHls.levels, preferredResolution);
+            const defaultIndex = findLevelByResolution(overlayHls.levels, DEFAULT_RESOLUTION);
+            const resolvedLevel = preferredIndex >= 0
+                ? preferredIndex
+                : (defaultIndex >= 0 ? defaultIndex : 0);
+            if (preferredIndex < 0) {
+                console.log(`Fallback to available quality level (${resolvedLevel}).`);
             }
-            overlayHls.currentLevel = levelIndex >= 0 ? levelIndex : 0;
+            overlayHls.currentLevel = resolvedLevel;
         }
         overlayHls.startLoad(safeStartTime);
 
@@ -1234,3 +1236,9 @@ document.addEventListener('keydown', (event) => {
         closeVideoOverlay();
     }
 });
+    function findLevelByResolution(levels, resolutionLabel) {
+        if (!levels || !resolutionLabel) {
+            return -1;
+        }
+        return levels.findIndex(level => typeof level?.height === 'number' && resolutionLabel === `${level.height}p`);
+    }
