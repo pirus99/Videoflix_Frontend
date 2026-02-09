@@ -668,7 +668,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     }
 
     const overlayConfig = getOverlayHlsConfig();
-    overlayConfig.loader = createOverlaySegmentLoader();
+    const SEGMENT_RETRY_DELAY = 1500;
+    overlayConfig.loader = createOverlaySegmentLoader(SEGMENT_RETRY_DELAY);
     overlayHls = new Hls(overlayConfig);
 
     const videoUrl = `${API_BASE_URL}${URL_TO_INDEX_M3U8(id, resolution)}`;
@@ -721,12 +722,12 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return 0;
         }
         const details = getLevelDetails();
-        const segmentDuration = details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration;
-        if (!segmentDuration) {
+        const estimatedSegmentDuration = details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration;
+        if (!estimatedSegmentDuration) {
             console.warn('Segment duration unavailable for seek distance.');
             return 0;
         }
-        return Math.abs(seekTime - lastLoadedFrag.start) / segmentDuration;
+        return Math.abs(seekTime - lastLoadedFrag.start) / estimatedSegmentDuration;
     }
 
     function fragCoversTime(frag, time) {
@@ -810,11 +811,11 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                     clearTimeout(ignoreSeekResetTimer);
                 }
                 overlayVideoContainer.addEventListener('seeked', () => {
-                    ignoreSeekEvent = false;
                     if (ignoreSeekResetTimer) {
                         clearTimeout(ignoreSeekResetTimer);
                         ignoreSeekResetTimer = null;
                     }
+                    ignoreSeekEvent = false;
                 }, { once: true });
                 ignoreSeekResetTimer = setTimeout(() => {
                     ignoreSeekEvent = false;
