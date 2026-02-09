@@ -778,6 +778,9 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (!isOutOfOrderFrag(frag)) {
             return false;
         }
+        if (typeof lastLoadedFrag.start !== 'number' || typeof lastLoadedFrag.duration !== 'number') {
+            return false;
+        }
         const expectedTime = lastLoadedFrag.start + lastLoadedFrag.duration;
         overlayHls.stopLoad();
         setTimeout(() => overlayHls.startLoad(expectedTime), SEEK_LOAD_DELAY);
@@ -922,6 +925,9 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
     overlayHls.on(Hls.Events.FRAG_BUFFERED, (event, data) => {
         if (enforceSequentialLoad(data.frag)) {
+            return;
+        }
+        if (pendingSeekTime !== null && data.frag.start > pendingSeekTime) {
             return;
         }
         lastLoadedFrag = data.frag;
