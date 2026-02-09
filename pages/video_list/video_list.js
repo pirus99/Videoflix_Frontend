@@ -91,7 +91,7 @@ function getOverlayHlsConfig() {
         xhrSetup: function (xhr) {
             xhr.withCredentials = true;
         },
-        autoStartLoad: false,
+        autoStartLoad: false, // Manual startLoad for sequential 202 retry handling.
 
         // BUFFER-MANAGEMENT - Allow progressive buffering as segments become available
         maxBufferLength: 30, // Reduce to prevent aggressive prefetching
@@ -705,16 +705,19 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (!details?.fragments?.length) {
             return null;
         }
-        return details.fragments.find(frag => time >= frag.start && time < frag.start + frag.duration) || null;
+        return details.fragments.find(frag => fragCoversTime(frag, time)) || null;
     }
 
     function getSegmentDistance(targetFrag, seekTime) {
         if (lastLoadedFrag && targetFrag) {
             return Math.abs(targetFrag.sn - lastLoadedFrag.sn);
         }
+        if (!lastLoadedFrag) {
+            return 0;
+        }
         const details = getLevelDetails();
         const segmentDuration = details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration;
-        if (!segmentDuration || !lastLoadedFrag) {
+        if (!segmentDuration) {
             return 0;
         }
         return Math.abs(seekTime - lastLoadedFrag.start) / segmentDuration;
@@ -728,7 +731,6 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
     overlayVideoContainer.onseeking = () => {
         if (ignoreSeekEvent) {
-            ignoreSeekEvent = false;
             return;
         }
 
@@ -748,6 +750,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         overlayHls.stopLoad();
+        // Allow backend to switch transcoding position before resuming load.
         setTimeout(() => overlayHls.startLoad(seekTime), 300);
     };
 
@@ -800,6 +803,9 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (initialTime > 0) {
             overlayVideoContainer.addEventListener('loadedmetadata', () => {
                 ignoreSeekEvent = true;
+                overlayVideoContainer.addEventListener('seeked', () => {
+                    ignoreSeekEvent = false;
+                }, { once: true });
                 overlayVideoContainer.currentTime = initialTime;
             }, { once: true });
         }
