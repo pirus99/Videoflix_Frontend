@@ -1087,14 +1087,13 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             // Disable auto quality to prevent switches during on-demand transcoding.
             overlayHls.autoLevelEnabled = false;
             const levelIndex = overlayHls.levels.findIndex(
-                level => level?.height !== undefined && currentResolution === `${level.height}p`
+                level => level?.height != null && currentResolution === `${level.height}p`
             );
             const resolvedLevel = levelIndex >= 0 ? levelIndex : 0;
             if (levelIndex < 0) {
                 console.log(`Fallback to default quality level (${resolvedLevel}).`);
             }
             overlayHls.currentLevel = resolvedLevel;
-            overlayHls.nextLevel = resolvedLevel;
         }
         overlayHls.startLoad(safeStartTime);
 
