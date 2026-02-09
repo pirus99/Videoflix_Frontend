@@ -962,17 +962,17 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
         if (shouldAutoPlay) {
             setTimeout(() => {
-                    if (overlayVideoContainer.readyState >= 2) {
-                        programmaticPlay = true;
-                        attemptPlayback(overlayVideoContainer);
-                    } else {
-                        const checkReady = setInterval(() => {
-                            if (overlayVideoContainer.readyState >= 2) {
-                                clearInterval(checkReady);
-                                programmaticPlay = true;
-                                attemptPlayback(overlayVideoContainer);
-                            }
-                        }, 500);
+                if (overlayVideoContainer.readyState >= 2) {
+                    programmaticPlay = true;
+                    attemptPlayback(overlayVideoContainer);
+                } else {
+                    const checkReady = setInterval(() => {
+                        if (overlayVideoContainer.readyState >= 2) {
+                            clearInterval(checkReady);
+                            programmaticPlay = true;
+                            attemptPlayback(overlayVideoContainer);
+                        }
+                    }, 500);
 
                     setTimeout(() => clearInterval(checkReady), 30000);
                 }
