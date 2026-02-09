@@ -881,7 +881,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return;
         }
 
-    const seekTime = overlayVideoContainer.currentTime;
+        const seekTime = overlayVideoContainer.currentTime;
         const shouldResume = shouldResumePlaybackAfterSeek();
 
         // Restart the overlay player for reliable seek handling when transcoding is delayed.
