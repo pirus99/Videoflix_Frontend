@@ -784,13 +784,11 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         clearSeekedHandler();
     });
     overlayVideoContainer.addEventListener('play', () => {
+        userPaused = false;
         if (pendingSeekTime !== null) {
             resumeAfterSeek = true;
-            userPaused = false;
             overlayVideoContainer.pause();
-            return;
         }
-        userPaused = false;
     });
     overlayVideoContainer.addEventListener('pause', () => {
         if (!overlayVideoContainer.seeking && pendingSeekTime === null) {
