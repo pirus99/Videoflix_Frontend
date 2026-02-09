@@ -754,7 +754,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         return false;
     }
 
-    // Returns true when a pending seek is buffered and state updates were applied.
+    // Returns true when a pending seek is buffered and state updates were applied; false otherwise.
     function tryResumeFromSeek() {
         const buffered = pendingSeekTime !== null && isTimeBuffered(pendingSeekTime);
         if (!buffered) {
@@ -789,9 +789,14 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return true;
         }
         if (typeof lastLoadedFrag.start !== 'number' || typeof lastLoadedFrag.duration !== 'number') {
+            console.warn('Missing fragment timing; skipping sequential enforcement.');
             return false;
         }
         const expectedTime = lastLoadedFrag.start + lastLoadedFrag.duration;
+        if (!Number.isFinite(expectedTime) || expectedTime < 0) {
+            console.warn('Invalid fragment timing; skipping sequential enforcement.');
+            return false;
+        }
         lastEnforcedSn = frag.sn;
         overlayHls.stopLoad();
         setTimeout(() => overlayHls.startLoad(expectedTime), SEEK_LOAD_DELAY);
@@ -931,6 +936,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     overlayHls.on(Hls.Events.FRAG_LOADED, (event, data) => {
         if (isOutOfOrderFragment(data.frag)) {
             // Keep the last sequential fragment to avoid jumping forward.
+            // Sequential enforcement happens when buffering completes.
             return;
         }
         lastLoadedFrag = data.frag;
