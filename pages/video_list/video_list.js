@@ -783,7 +783,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return false;
         }
         if (lastEnforcedSn === frag.sn) {
-            // Already enforced this fragment; avoid repeating load restarts.
+            // Already enforced this fragment; ignore it to avoid repeating load restarts.
             return true;
         }
         if (typeof lastLoadedFrag.start !== 'number' || typeof lastLoadedFrag.duration !== 'number') {
@@ -926,6 +926,9 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     });
 
     overlayHls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+        if (isOutOfOrderFragment(data.frag)) {
+            return;
+        }
         lastEnforcedSn = null;
         lastLoadedFrag = data.frag;
     });
