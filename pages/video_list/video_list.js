@@ -840,11 +840,25 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     };
 
     overlayHls.on(Hls.Events.FRAG_LOADING, (event, data) => {
-        if (pendingSeekTime !== null || !lastLoadedFrag || typeof lastLoadedFrag.sn !== 'number') {
+        const frag = data.frag;
+        if (!frag || typeof frag.sn !== 'number') {
+            return;
+        }
+        if (pendingSeekTime !== null) {
+            if (fragCoversTime(frag, pendingSeekTime)) {
+                return;
+            }
+            if (frag.start > pendingSeekTime) {
+                overlayHls.stopLoad();
+                setTimeout(() => overlayHls.startLoad(pendingSeekTime), SEEK_LOAD_DELAY);
+            }
+            return;
+        }
+        if (!lastLoadedFrag || typeof lastLoadedFrag.sn !== 'number') {
             return;
         }
         const expectedSn = lastLoadedFrag.sn + 1;
-        if (data.frag?.sn > expectedSn) {
+        if (frag.sn > expectedSn) {
             const expectedTime = lastLoadedFrag.start + lastLoadedFrag.duration;
             overlayHls.stopLoad();
             setTimeout(() => overlayHls.startLoad(expectedTime), SEEK_LOAD_DELAY);
