@@ -692,6 +692,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let seekedHandler = null;
     let userPaused = false;
     let programmaticPause = false;
+    let programmaticPlay = false;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -759,10 +760,15 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         pendingSeekTime = null;
         setControlsLocked(false);
         if (resumeAfterSeek) {
+            programmaticPlay = true;
             attemptPlayback(overlayVideoContainer);
         }
         resumeAfterSeek = false;
         return true;
+    }
+
+    function isUserPauseEvent() {
+        return !overlayVideoContainer.seeking && pendingSeekTime === null;
     }
 
     function clearSeekBufferTimer() {
@@ -785,6 +791,10 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         clearSeekedHandler();
     });
     overlayVideoContainer.addEventListener('play', () => {
+        if (programmaticPlay) {
+            programmaticPlay = false;
+            return;
+        }
         userPaused = false;
         if (pendingSeekTime !== null) {
             resumeAfterSeek = true;
@@ -797,7 +807,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             programmaticPause = false;
             return;
         }
-        if (!overlayVideoContainer.seeking && pendingSeekTime === null) {
+        if (isUserPauseEvent()) {
             userPaused = true;
         }
     });
@@ -895,6 +905,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             pendingSeekTime = null;
             setControlsLocked(false);
             if (resumeAfterSeek) {
+                programmaticPlay = true;
                 attemptPlayback(overlayVideoContainer);
             }
             resumeAfterSeek = false;
@@ -951,15 +962,17 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
         if (shouldAutoPlay) {
             setTimeout(() => {
-                if (overlayVideoContainer.readyState >= 2) {
-                    attemptPlayback(overlayVideoContainer);
-                } else {
-                    const checkReady = setInterval(() => {
-                        if (overlayVideoContainer.readyState >= 2) {
-                            clearInterval(checkReady);
-                            attemptPlayback(overlayVideoContainer);
-                        }
-                    }, 500);
+                    if (overlayVideoContainer.readyState >= 2) {
+                        programmaticPlay = true;
+                        attemptPlayback(overlayVideoContainer);
+                    } else {
+                        const checkReady = setInterval(() => {
+                            if (overlayVideoContainer.readyState >= 2) {
+                                clearInterval(checkReady);
+                                programmaticPlay = true;
+                                attemptPlayback(overlayVideoContainer);
+                            }
+                        }, 500);
 
                     setTimeout(() => clearInterval(checkReady), 30000);
                 }
