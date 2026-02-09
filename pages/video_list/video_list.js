@@ -105,15 +105,15 @@ function getOverlayHlsConfig() {
         maxBufferLength: 30, // Reduce to prevent aggressive prefetching
         maxMaxBufferLength: 60,
         maxBufferSize: 60 * 1000 * 1000,
-        maxBufferHole: 0.1, // Very small - don't skip gaps
+        maxBufferHole: 0.5,
         backBufferLength: 20,
 
-        // STALL-DETECTION - Disabled to prevent auto-skip behavior
+        // STALL-DETECTION - Tolerant enough to recover from buffer gaps
         lowBufferWatchdogPeriod: 0.5,
         highBufferWatchdogPeriod: 2,
-        nudgeOffset: 0.05,
-        nudgeMaxRetry: 0, // Disable auto-nudge - CRITICAL
-        maxFragLookUpTolerance: 0.05, // Very strict
+        nudgeOffset: 0.2,
+        nudgeMaxRetry: 3,
+        maxFragLookUpTolerance: 0.25,
 
         // PERFORMANCE
         enableWorker: true,
@@ -131,9 +131,9 @@ function getOverlayHlsConfig() {
         abrBandWidthFactor: 0.8,
         abrBandWidthUpFactor: 0.7,
 
-        // SEEK - Very strict to prevent skipping
-        maxSeekHole: 0.05,
-        seekHoleNudgeDuration: 0.01,
+        // SEEK - Tolerant enough for smooth playback
+        maxSeekHole: 0.5,
+        seekHoleNudgeDuration: 0.1,
 
         // NETWORK-CONFIGURATION - Managed by custom retry logic
         manifestLoadingTimeOut: 30000,
