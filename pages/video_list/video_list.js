@@ -675,7 +675,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     overlayHls.loadSource(videoUrl);
     overlayHls.attachMedia(overlayVideoContainer);
 
-    const SEEK_SEGMENT_THRESHOLD = 10;
+    const SEEK_SEGMENT_THRESHOLD = 10; // Backend cancels transcoding beyond ~10 segments.
+    const SEEK_LOAD_DELAY = 300; // Allow backend to switch transcoding position.
     const initialTime = Number.isFinite(startTime) ? startTime : 0;
     const shouldAutoPlay = resumePlayback;
     let lastLoadedFrag = null;
@@ -683,6 +684,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let resumeAfterSeek = false;
     let controlsLocked = false;
     let ignoreSeekEvent = false;
+    let ignoreSeekResetTimer = null;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -716,7 +718,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return 0;
         }
         const details = getLevelDetails();
-        const segmentDuration = details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration;
+        const segmentDuration = details?.targetDuration || details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration;
         if (!segmentDuration) {
             return 0;
         }
@@ -750,8 +752,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         overlayHls.stopLoad();
-        // Allow backend to switch transcoding position before resuming load.
-        setTimeout(() => overlayHls.startLoad(seekTime), 300);
+        setTimeout(() => overlayHls.startLoad(seekTime), SEEK_LOAD_DELAY);
     };
 
     overlayVideoContainer.onwaiting = () => {
@@ -803,9 +804,20 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (initialTime > 0) {
             overlayVideoContainer.addEventListener('loadedmetadata', () => {
                 ignoreSeekEvent = true;
+                if (ignoreSeekResetTimer) {
+                    clearTimeout(ignoreSeekResetTimer);
+                }
                 overlayVideoContainer.addEventListener('seeked', () => {
                     ignoreSeekEvent = false;
+                    if (ignoreSeekResetTimer) {
+                        clearTimeout(ignoreSeekResetTimer);
+                        ignoreSeekResetTimer = null;
+                    }
                 }, { once: true });
+                ignoreSeekResetTimer = setTimeout(() => {
+                    ignoreSeekEvent = false;
+                    ignoreSeekResetTimer = null;
+                }, 2000);
                 overlayVideoContainer.currentTime = initialTime;
             }, { once: true });
         }
