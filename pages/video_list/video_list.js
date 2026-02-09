@@ -754,6 +754,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         return false;
     }
 
+    // Returns true when a pending seek is buffered and playback state updated.
     function tryResumeFromSeek() {
         const buffered = pendingSeekTime !== null && isTimeBuffered(pendingSeekTime);
         if (!buffered) {
@@ -785,6 +786,9 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (lastEnforcedSn === frag.sn) {
             // Already enforced this fragment; ignore it to avoid repeating load restarts.
             return true;
+        }
+        if (!lastLoadedFrag) {
+            return false;
         }
         if (typeof lastLoadedFrag.start !== 'number' || typeof lastLoadedFrag.duration !== 'number') {
             return false;
@@ -927,6 +931,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
     overlayHls.on(Hls.Events.FRAG_LOADED, (event, data) => {
         if (isOutOfOrderFragment(data.frag)) {
+            // Keep the last sequential fragment to avoid jumping forward.
             return;
         }
         lastLoadedFrag = data.frag;
