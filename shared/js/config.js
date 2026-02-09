@@ -66,3 +66,18 @@ const TOAST_DURATION = 2000;
  * // url is 'video/5/720p/index.m3u8'
  */
 const URL_TO_INDEX_M3U8 = (id, resolution) => `video/${id}/${resolution}/index.m3u8`
+
+/**
+ * Generates the URL path to the HLS preview playlist (index.m3u8) for a given video.
+ *
+ * @param {number|string} id - The unique identifier of the video/movie.
+ *                             Used to locate the correct video folder on the server.
+ * @param {string} resolution - The desired video resolution (e.g., '480p', '720p', '1080p').
+ *                              Used to select the corresponding quality folder.
+ * @returns {string} The URL path to the HLS preview playlist file for the specified video and resolution.
+ *
+ * @example
+ * const url = URL_TO_PREVIEW_M3U8(5, '720p');
+ * // url is 'preview/5/720p/index.m3u8'
+ */
+const URL_TO_PREVIEW_M3U8 = (id, resolution) => `preview/${id}/index.m3u8`

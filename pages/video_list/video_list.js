@@ -2,6 +2,270 @@ let overlayHls = null;
 let NEWEST = document.getElementById('newest')
 
 /**
+ * Shared HLS.js configuration optimized for on-demand transcoding scenarios.
+ * Includes extended timeouts, aggressive retry logic, and buffer management.
+ * @returns {Object} HLS.js configuration object
+ */
+function getHlsConfig() {
+    return {
+        xhrSetup: function (xhr) {
+            xhr.withCredentials = true;
+        },
+
+        // BUFFER-MANAGEMENT - Extended for transcoding delays
+        maxBufferLength: 60,
+        maxMaxBufferLength: 1200,
+        maxBufferSize: 120 * 1000 * 1000,
+        maxBufferHole: 1.0,
+        backBufferLength: 120,
+
+        // STALL-DETECTION - More tolerant for transcoding
+        lowBufferWatchdogPeriod: 1.0,
+        highBufferWatchdogPeriod: 3,
+        nudgeOffset: 0.2,
+        nudgeMaxRetry: 5,
+        maxFragLookUpTolerance: 0.5,
+
+        // PERFORMANCE
+        enableWorker: true,
+        startFragPrefetch: true,
+        testBandwidth: true,
+        enableSoftwareAES: true,
+
+        // SEEK - More tolerant
+        maxSeekHole: 3,
+        seekHoleNudgeDuration: 0.02,
+
+        // NETWORK-CONFIGURATION - Extended for transcoding
+        manifestLoadingTimeOut: 30000,
+        manifestLoadingMaxRetry: 6,
+        manifestLoadingRetryDelay: 2000,
+        manifestLoadingMaxRetryTimeout: 64000,
+        levelLoadingTimeOut: 30000,
+        levelLoadingMaxRetry: 6,
+        levelLoadingRetryDelay: 2000,
+        levelLoadingMaxRetryTimeout: 64000,
+        fragLoadingTimeOut: 60000,
+        fragLoadingMaxRetry: 8,
+        fragLoadingRetryDelay: 2000,
+        fragLoadingMaxRetryTimeout: 64000,
+
+        // APPEND-CONFIGURATION - More retries
+        appendErrorMaxRetry: 5,
+
+        // ADVANCED SETTINGS
+        lowLatencyMode: false,
+        enableCEA708Captions: false,
+        stretchShortVideoTrack: true,
+        forceKeyFrameOnDiscontinuity: true,
+
+        // LIVE-STREAM-CONFIGURATION
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 10,
+        liveDurationInfinity: false,
+
+        // FRAGMENT-DRIFT-TOLERANCE - More tolerant
+        maxAudioFramesDrift: 2,
+        maxVideoFramesDrift: 2,
+
+        // START-POSITION
+        startPosition: -1,
+
+        // DEBUG
+        debug: false,
+
+        // METADATA-CONFIGURATION
+        enableDateRangeMetadataCues: false,
+        enableEmsgMetadataCues: false,
+        enableID3MetadataCues: false
+    };
+}
+
+/**
+ * HLS.js configuration specifically for overlay player optimized for on-demand transcoding.
+ * Configured to prevent segment skipping and wait patiently for transcoding to complete.
+ * @returns {Object} HLS.js configuration object
+ */
+function getOverlayHlsConfig() {
+    return {
+        xhrSetup: function (xhr) {
+            xhr.withCredentials = true;
+        },
+
+        // BUFFER-MANAGEMENT - Allow progressive buffering as segments become available
+        maxBufferLength: 30, // Reduce to prevent aggressive prefetching
+        maxMaxBufferLength: 60,
+        maxBufferSize: 60 * 1000 * 1000,
+        maxBufferHole: 0.1, // Very small - don't skip gaps
+        backBufferLength: 20,
+
+        // STALL-DETECTION - Disabled to prevent auto-skip behavior
+        lowBufferWatchdogPeriod: 0.5,
+        highBufferWatchdogPeriod: 2,
+        nudgeOffset: 0.05,
+        nudgeMaxRetry: 0, // Disable auto-nudge - CRITICAL
+        maxFragLookUpTolerance: 0.05, // Very strict
+
+        // PERFORMANCE
+        enableWorker: true,
+        startFragPrefetch: false, // Critical: don't prefetch
+        testBandwidth: false,
+        enableSoftwareAES: true,
+        progressive: false, // Disable progressive loading to prevent parallel requests
+        
+        // ABR - Disable adaptive bitrate to prevent segment jumping
+        abrEwmaFastLive: 1,
+        abrEwmaSlowLive: 3,
+        abrEwmaFastVoD: 1,
+        abrEwmaSlowVoD: 3,
+        abrEwmaDefaultEstimate: 500000,
+        abrBandWidthFactor: 0.8,
+        abrBandWidthUpFactor: 0.7,
+
+        // SEEK - Very strict to prevent skipping
+        maxSeekHole: 0.05,
+        seekHoleNudgeDuration: 0.01,
+
+        // NETWORK-CONFIGURATION - Managed by custom retry logic
+        manifestLoadingTimeOut: 30000,
+        manifestLoadingMaxRetry: 3,
+        manifestLoadingRetryDelay: 2000,
+        manifestLoadingMaxRetryTimeout: 60000,
+        levelLoadingTimeOut: 30000,
+        levelLoadingMaxRetry: 3,
+        levelLoadingRetryDelay: 2000,
+        levelLoadingMaxRetryTimeout: 60000,
+        
+        // FRAGMENT-LOADING - Let our custom handler manage this
+        fragLoadingTimeOut: 30000, // 30 seconds timeout
+        fragLoadingMaxRetry: 1, // We handle retries manually
+        fragLoadingRetryDelay: 1000,
+        fragLoadingMaxRetryTimeout: 30000,
+
+        // APPEND-CONFIGURATION
+        appendErrorMaxRetry: 3,
+
+        // ADVANCED SETTINGS
+        lowLatencyMode: false,
+        enableCEA708Captions: false,
+        stretchShortVideoTrack: false, // Don't manipulate playback
+        forceKeyFrameOnDiscontinuity: false,
+        abrEwmaDefaultEstimate: 500000,
+        
+        // LIVE-STREAM-CONFIGURATION
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 5,
+        liveDurationInfinity: false,
+
+        // FRAGMENT-DRIFT-TOLERANCE - Strict to prevent skipping
+        maxAudioFramesDrift: 1,
+        maxVideoFramesDrift: 1,
+
+        // START-POSITION
+        startPosition: -1,
+
+        // DEBUG
+        debug: false,
+
+        // METADATA-CONFIGURATION
+        enableDateRangeMetadataCues: false,
+        enableEmsgMetadataCues: false,
+        enableID3MetadataCues: false
+    };
+}
+
+/**
+ * Attempts to play video with retry logic for transcoding delays.
+ * @param {HTMLVideoElement} videoElement - The video element to play.
+ * @param {number} maxRetries - Maximum number of retry attempts.
+ * @param {number} retryDelay - Delay between retries in ms.
+ * @returns {Promise<void>}
+ */
+async function attemptPlayback(videoElement, maxRetries = 10, retryDelay = 500) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            if (videoElement.readyState >= 2) {
+                await videoElement.play();
+                return;
+            }
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+        } catch (error) {
+            if (attempt === maxRetries - 1) {
+                console.log("Playback requires user interaction or failed after retries");
+            }
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+    }
+}
+
+/**
+ * Sets up common HLS error handling with recovery logic.
+ * @param {Hls} hlsInstance - The HLS.js instance.
+ * @param {HTMLVideoElement} videoElement - The associated video element.
+ * @param {Function} reloadCallback - Callback to reload the video on fatal error.
+ */
+function setupHlsErrorHandling(hlsInstance, videoElement, reloadCallback) {
+    let recoverAttempts = 0;
+    const maxRecoverAttempts = 3;
+
+    hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+            console.warn("HLS fatal error:", data.type, data.details);
+
+            switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                    console.log("Network error, attempting recovery...");
+                    if (recoverAttempts < maxRecoverAttempts) {
+                        recoverAttempts++;
+                        setTimeout(() => {
+                            hlsInstance.startLoad();
+                        }, 2000 * recoverAttempts);
+                    } else if (reloadCallback) {
+                        console.log("Max recovery attempts reached, reloading...");
+                        recoverAttempts = 0;
+                        setTimeout(reloadCallback, 3000);
+                    }
+                    break;
+
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                    console.log("Media error, attempting recovery...");
+                    if (recoverAttempts < maxRecoverAttempts) {
+                        recoverAttempts++;
+                        hlsInstance.recoverMediaError();
+                    } else {
+                        console.log("Trying swap audio codec recovery...");
+                        hlsInstance.swapAudioCodec();
+                        hlsInstance.recoverMediaError();
+                        recoverAttempts = 0;
+                    }
+                    break;
+
+                default:
+                    console.error("Unrecoverable HLS error:", data);
+                    break;
+            }
+        } else {
+            // Non-fatal errors - log but continue
+            if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+                console.log("Buffer stalled, waiting for more data...");
+            } else if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
+                console.log("Fragment load error, will retry automatically...");
+            }
+        }
+    });
+
+    // Handle buffer stalls gracefully
+    hlsInstance.on(Hls.Events.BUFFER_EOS, () => {
+        console.log("Buffer end of stream reached");
+    });
+
+    // Reset recovery counter on successful playback
+    videoElement.addEventListener('playing', () => {
+        recoverAttempts = 0;
+    });
+}
+
+/**
  * Scrolls a video list container horizontally.
  * @param {HTMLElement} button - The button that triggered the scroll.
  * @param {number} amount - The number of pixels to scroll.
@@ -196,8 +460,8 @@ function renderCategorySection(cat, videos) {
 function videoTemplate(video) {
     let listItem = document.createElement('li');
     let img = document.createElement('img');
-    img.setAttribute("src", video.thumbnail_url)
-    img.setAttribute("alt", video.title)
+    img.setAttribute("src", video.thumbnail_url || '')
+    img.setAttribute("alt", video.title || '')
     img.setAttribute("onclick", `showVideo(${video.id})`)
     listItem.append(img);
     return listItem;
@@ -237,7 +501,7 @@ async function doRefresh() {
 }
 
 /**
- * Loads and plays a video using HLS.js.
+ * Loads and plays a video using HLS.js with robust transcoding support.
  * @param {number} id - The video ID.
  * @param {string} resolution - The desired video resolution (e.g., '480p').
  */
@@ -245,85 +509,33 @@ function loadVideo(id, resolution) {
     if (hls) {
         hls.destroy();
     }
-    hls = new Hls({
-        xhrSetup: function (xhr) {
-            xhr.withCredentials = true
-        },
-        // BUFFER-MANAGEMENT
-        maxBufferLength: 45,
-        maxMaxBufferLength: 900,
-        maxBufferSize: 90 * 1000 * 1000,
-        maxBufferHole: 0.5,
-        backBufferLength: 90,
 
-        // STALL-DETECTION
-        lowBufferWatchdogPeriod: 0.5,
-        highBufferWatchdogPeriod: 2,
-        nudgeOffset: 0.1,
-        nudgeMaxRetry: 3,
-        maxFragLookUpTolerance: 0.25,
+    hls = new Hls(getHlsConfig());
 
-        // PERFORMANCE
-        enableWorker: true,
-        startFragPrefetch: true,
-        testBandwidth: true,
-        enableSoftwareAES: true,
-
-        // SEEK
-        maxSeekHole: 2,
-        seekHoleNudgeDuration: 0.01,
-
-        // NETWORK-CONFIGURATION
-        manifestLoadingTimeOut: 10000,
-        manifestLoadingMaxRetry: 4,
-        levelLoadingTimeOut: 10000,
-        levelLoadingMaxRetry: 4,
-        fragLoadingTimeOut: 20000,
-        fragLoadingMaxRetry: 6,
-
-        // APPEND-CONFIGURATION
-        appendErrorMaxRetry: 3,
-        loaderMaxRetry: 2,
-        loaderMaxRetryTimeout: 64000,
-
-        // ADVANCED SETTINGS
-        lowLatencyMode: false,
-        enableCEA708Captions: false,
-        stretchShortVideoTrack: false,
-        forceKeyFrameOnDiscontinuity: true,
-
-        // LIVE-STREAM-CONFIGURATION
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 10,
-        liveDurationInfinity: false,
-
-        // FRAGMENT-DRIFT-TOLERANCE
-        maxAudioFramesDrift: 1,
-        maxVideoFramesDrift: 1,
-
-        // DEBUG
-        debug: false,
-
-        // METADATA-CONFIGURATION
-        enableDateRangeMetadataCues: false,
-        enableEmsgMetadataCues: false,
-        enableID3MetadataCues: false
-    });
-    hls.loadSource(`${API_BASE_URL}${URL_TO_INDEX_M3U8(id, resolution)}`);
+    const videoUrl = `${API_BASE_URL}${URL_TO_PREVIEW_M3U8(id, resolution)}`;
+    hls.loadSource(videoUrl);
     hls.attachMedia(videoContainer);
 
-    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setTimeout(() => {
-            videoContainer.play().catch(() => {
-                console.log("User interaction required to start playback");
-            });
-        }, 2000)
+    // Setup error handling with reload callback
+    setupHlsErrorHandling(hls, videoContainer, () => {
+        loadVideo(id, resolution);
     });
 
-    hls.on(Hls.Events.ERROR, (event, data) => {
-        if (data.fatal) {
-            console.error("HLS fatal error:", data);
-        }
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        // Wait for sufficient buffer before attempting playback
+        const checkBuffer = () => {
+            if (videoContainer.readyState >= 3 || hls.media?.buffered?.length > 0) {
+                attemptPlayback(videoContainer);
+            } else {
+                setTimeout(checkBuffer, 500);
+            }
+        };
+        setTimeout(checkBuffer, 1000);
+    });
+
+    // Handle level switching for quality adaptation
+    hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+        console.log("Quality level switched to:", data.level);
     });
 }
 
@@ -368,17 +580,8 @@ function initScrollIndicators() {
 }
 
 /**
- * Refreshes all scroll indicators
- */
-function updateAllScrollIndicators() {
-    const videoLists = document.querySelectorAll('.video_list ul');
-    videoLists.forEach(list => {
-        updateScrollIndicator(list);
-    });
-}
-
-/**
- * Loads a video in the overlay using HLS.js.
+ * Loads a video in the overlay using HLS.js optimized for on-demand transcoding.
+ * Implements custom retry logic to wait for segments being transcoded.
  * @param {number} id - The video ID.
  * @param {string} resolution - The desired resolution.
  */
@@ -387,86 +590,163 @@ function loadVideoInOverlay(id, resolution) {
         overlayHls.destroy();
     }
 
-    overlayHls = new Hls({
-        xhrSetup: function (xhr) {
-            xhr.withCredentials = true
-        },
-        // BUFFER-MANAGEMENT
-        maxBufferLength: 45,
-        maxMaxBufferLength: 900,
-        maxBufferSize: 90 * 1000 * 1000,
-        maxBufferHole: 0.5,
-        backBufferLength: 90,
+    overlayHls = new Hls(getOverlayHlsConfig());
 
-        // STALL-DETECTION
-        lowBufferWatchdogPeriod: 0.5,
-        highBufferWatchdogPeriod: 2,
-        nudgeOffset: 0.1,
-        nudgeMaxRetry: 3,
-        maxFragLookUpTolerance: 0.25,
-
-        // PERFORMANCE
-        enableWorker: true,
-        startFragPrefetch: true,
-        testBandwidth: true,
-        enableSoftwareAES: true,
-
-        // SEEK
-        maxSeekHole: 2,
-        seekHoleNudgeDuration: 0.01,
-
-        // NETWORK-CONFIGURATION
-        manifestLoadingTimeOut: 10000,
-        manifestLoadingMaxRetry: 4,
-        levelLoadingTimeOut: 10000,
-        levelLoadingMaxRetry: 4,
-        fragLoadingTimeOut: 20000,
-        fragLoadingMaxRetry: 6,
-
-        // APPEND-CONFIGURATION
-        appendErrorMaxRetry: 3,
-        loaderMaxRetry: 2,
-        loaderMaxRetryTimeout: 64000,
-
-        // ADVANCED SETTINGS
-        lowLatencyMode: false,
-        enableCEA708Captions: false,
-        stretchShortVideoTrack: false,
-        forceKeyFrameOnDiscontinuity: true,
-
-        // LIVE-STREAM-CONFIGURATION
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 10,
-        liveDurationInfinity: false,
-
-        // FRAGMENT-DRIFT-TOLERANCE
-        maxAudioFramesDrift: 1,
-        maxVideoFramesDrift: 1,
-
-        // DEBUG
-        debug: false,
-
-        // METADATA-CONFIGURATION
-        enableDateRangeMetadataCues: false,
-        enableEmsgMetadataCues: false,
-        enableID3MetadataCues: false
-    });
-
-    overlayHls.loadSource(`${API_BASE_URL}${URL_TO_INDEX_M3U8(id, resolution)}`);
+    const videoUrl = `${API_BASE_URL}${URL_TO_INDEX_M3U8(id, resolution)}`;
+    overlayHls.loadSource(videoUrl);
     overlayHls.attachMedia(overlayVideoContainer);
 
-    overlayHls.on(Hls.Events.MANIFEST_PARSED, () => {
+    // New: strict sequential segment loading and 202 retry logic
+    const segmentState = new Map(); // key -> {retryCount, pendingPromise}
+    const MAX_RETRY_202 = 10;
+    const RETRY_202_DELAY = 2000; // 2 seconds
+
+    // Helper: Create a unique key for a fragment
+    function fragKey(frag) {
+        return `${frag.level}_${frag.sn}`;
+    }
+
+    // Pause/resume control for user-initiated seeks
+    let userInitiatedSeek = false;
+
+    overlayVideoContainer.addEventListener('seeking', () => {
+        userInitiatedSeek = true;
+        const seekTime = overlayVideoContainer.currentTime;
+        console.log(`User seeking to ${seekTime}s — pausing until the requested segment is buffered`);
+
+        // Stop loading and clear any pending retry timers
+        overlayHls.stopLoad();
+
+        // Start load at the seek time after short delay to allow backend to switch
         setTimeout(() => {
-            overlayVideoContainer.play().catch(() => {
-            console.log("User interaction required to start overlay playback");
-        });
-        }, 2000)
+            overlayHls.startLoad(seekTime);
+        }, 500);
+    });
+
+    overlayHls.on(Hls.Events.FRAG_LOADING, (event, data) => {
+        const key = fragKey(data.frag);
+        // Ensure we only track one active request per fragment
+        if (!segmentState.has(key)) {
+            segmentState.set(key, { retryCount: 0 });
+        }
+        console.log(`→ Requesting segment ${data.frag.sn} (${key})`);
+    });
+
+    // Intercept network responses for 202 status via XHR hooks
+    // Hls.js allows to provide a custom loader, but we can listen to FRAG_LOAD_EMERGENCY_ABORTED and FRAG_LOAD_ERROR events
+    overlayHls.on(Hls.Events.FRAG_LOAD_ERROR, (event, data) => {
+        // Non-fatal fragment error: could be 404/202 etc. Hls doesn't expose status here, so rely on frag.loadData if available
+        const frag = data.frag || data;
+        const key = fragKey(frag);
+        const state = segmentState.get(key) || { retryCount: 0 };
+
+        // If we have xhr data with status
+        const loader = data && data.networkDetails && data.networkDetails.xhr ? data.networkDetails.xhr : null;
+        const status = loader ? loader.status : (data && data.response && data.response.status) || null;
+
+        // If backend signals 202 Accepted, retry after 2s up to MAX_RETRY_202
+        if (status === 202 || (data && data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR && data.response && data.response.status === 202)) {
+            state.retryCount = (state.retryCount || 0) + 1;
+            segmentState.set(key, state);
+
+            console.log(`Segment ${frag.sn} returned 202 (retry ${state.retryCount}/${MAX_RETRY_202})`);
+
+            if (state.retryCount > MAX_RETRY_202) {
+                console.error(`Segment ${frag.sn} failed after ${MAX_RETRY_202} retries — reporting playback error.`);
+                // Dispatch a user-facing error and stop loading
+                overlayHls.stopLoad();
+                showPlaybackError(`Segment ${frag.sn} unavailable after multiple attempts.`);
+                return;
+            }
+
+            // Wait 2 seconds and re-request this fragment
+            setTimeout(() => {
+                // Only start loading the specific time window of the frag
+                overlayHls.startLoad(frag.start);
+            }, RETRY_202_DELAY);
+
+            return;
+        }
+
+        // For other non-fatal frag load errors, let Hls attempt normal retries
+        console.warn(`Frag load error for ${frag.sn}`, data);
+    });
+
+    // Use FRAG_LOADED to reset retry counters and handle user-seek resume
+    overlayHls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+        const key = fragKey(data.frag);
+        if (segmentState.has(key)) segmentState.delete(key);
+        console.log(`✓ Segment ${data.frag.sn} loaded and cleared (${key})`);
+
+        // If the user initiated a seek and this frag covers the currentTime, resume playback
+        if (userInitiatedSeek) {
+            const curr = overlayVideoContainer.currentTime;
+            if (curr >= data.frag.start && curr < data.frag.start + data.frag.duration) {
+                console.log('Requested seek segment is available and buffered — resuming playback');
+                userInitiatedSeek = false;
+                // Only resume if user had paused playback
+                if (overlayVideoContainer.paused) {
+                    attemptPlayback(overlayVideoContainer);
+                }
+            }
+        }
     });
 
     overlayHls.on(Hls.Events.ERROR, (event, data) => {
+        // Handle fatal errors conservatively
         if (data.fatal) {
-            console.error("HLS fatal error:", data);
+            console.error('Fatal HLS error in overlay player:', data.type, data.details);
+            switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                    // Try gentle reload
+                    overlayHls.stopLoad();
+                    setTimeout(() => overlayHls.startLoad(), 2000);
+                    break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                    overlayHls.recoverMediaError();
+                    break;
+                default:
+                    showPlaybackError('Playback failed due to an unrecoverable error.');
+                    break;
+            }
         }
+    });
+
+    overlayHls.on(Hls.Events.FRAG_BUFFERED, (event, data) => {
+        // Buffering confirmed
+        console.log(`✓ Fragment ${data.frag.sn} buffered`);
+    });
+
+    // Handle manifest parsing
+    overlayHls.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log("Manifest parsed, waiting for segments...");
+        
+        // Don't auto-play, wait for segments
+        setTimeout(() => {
+            if (overlayVideoContainer.readyState >= 2) {
+                attemptPlayback(overlayVideoContainer);
+            } else {
+                // Keep checking
+                const checkReady = setInterval(() => {
+                    if (overlayVideoContainer.readyState >= 2) {
+                        clearInterval(checkReady);
+                        attemptPlayback(overlayVideoContainer);
+                    }
+                }, 500);
+                
+                // Timeout after 30 seconds
+                setTimeout(() => clearInterval(checkReady), 30000);
+            }
+        }, 1500);
+    });
+
+    // Prevent automatic seeking on stalls
+    overlayVideoContainer.addEventListener('waiting', () => {
+        console.log("Player waiting for data...");
+    });
+
+    overlayVideoContainer.addEventListener('stalled', () => {
+        console.log("Playback stalled, waiting for segment...");
     });
 }
 
