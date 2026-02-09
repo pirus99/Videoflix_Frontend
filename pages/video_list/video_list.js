@@ -91,6 +91,7 @@ function getOverlayHlsConfig() {
         xhrSetup: function (xhr) {
             xhr.withCredentials = true;
         },
+        autoStartLoad: false,
 
         // BUFFER-MANAGEMENT - Allow progressive buffering as segments become available
         maxBufferLength: 30, // Reduce to prevent aggressive prefetching
@@ -171,6 +172,74 @@ function getOverlayHlsConfig() {
         enableDateRangeMetadataCues: false,
         enableEmsgMetadataCues: false,
         enableID3MetadataCues: false
+    };
+}
+
+/**
+ * Creates a custom HLS loader that retries fragment requests returning HTTP 202
+ * until the segment becomes available.
+ * @param {number} retryDelay - Delay between retry attempts in ms.
+ * @returns {Function} Custom loader class for HLS.js.
+ */
+function createOverlaySegmentLoader(retryDelay = 1500) {
+    const BaseLoader = Hls.DefaultConfig.loader;
+
+    return class OverlaySegmentLoader extends BaseLoader {
+        constructor(config) {
+            super(config);
+            this.retryDelay = retryDelay;
+            this.retryTimer = null;
+            this.isDestroyed = false;
+        }
+
+        load(context, config, callbacks) {
+            const wrappedCallbacks = {
+                onSuccess: (response, stats, ctx, networkDetails) => {
+                    if (ctx?.type === 'fragment' && stats?.httpStatus === 202) {
+                        if (this.retryTimer) {
+                            clearTimeout(this.retryTimer);
+                        }
+                        this.retryTimer = setTimeout(() => {
+                            if (!this.isDestroyed) {
+                                super.load(context, config, wrappedCallbacks);
+                            }
+                        }, this.retryDelay);
+                        return;
+                    }
+                    callbacks.onSuccess(response, stats, ctx, networkDetails);
+                },
+                onError: (error, ctx, networkDetails) => {
+                    callbacks.onError(error, ctx, networkDetails);
+                },
+                onTimeout: (stats, ctx, networkDetails) => {
+                    callbacks.onTimeout(stats, ctx, networkDetails);
+                },
+                onProgress: (stats, ctx, data, networkDetails) => {
+                    if (callbacks.onProgress) {
+                        callbacks.onProgress(stats, ctx, data, networkDetails);
+                    }
+                }
+            };
+
+            super.load(context, config, wrappedCallbacks);
+        }
+
+        abort() {
+            if (this.retryTimer) {
+                clearTimeout(this.retryTimer);
+                this.retryTimer = null;
+            }
+            super.abort();
+        }
+
+        destroy() {
+            this.isDestroyed = true;
+            if (this.retryTimer) {
+                clearTimeout(this.retryTimer);
+                this.retryTimer = null;
+            }
+            super.destroy();
+        }
     };
 }
 
@@ -314,7 +383,12 @@ function initEventListeners() {
 function handleResolutionChange(event) {
     currentResolution = event.target.value;
     if (currentVideo && document.getElementById('overlay').style.display === 'flex') {
-        loadVideoInOverlay(currentVideo, currentResolution);
+        const resumeTime = overlayVideoContainer ? overlayVideoContainer.currentTime : 0;
+        const resumePlayback = overlayVideoContainer ? !overlayVideoContainer.paused : true;
+        loadVideoInOverlay(currentVideo, currentResolution, {
+            startTime: resumeTime,
+            resumePlayback
+        });
     }
 }
 
@@ -581,124 +655,131 @@ function initScrollIndicators() {
 
 /**
  * Loads a video in the overlay using HLS.js optimized for on-demand transcoding.
- * Implements custom retry logic to wait for segments being transcoded.
+ * Ensures sequential fragment loading and preserves playback state across quality changes.
  * @param {number} id - The video ID.
  * @param {string} resolution - The desired resolution.
+ * @param {{startTime?: number, resumePlayback?: boolean}} [options] - Playback options.
  */
-function loadVideoInOverlay(id, resolution) {
+function loadVideoInOverlay(id, resolution, options = {}) {
+    const { startTime = 0, resumePlayback = true } = options;
+
     if (overlayHls) {
         overlayHls.destroy();
     }
 
-    overlayHls = new Hls(getOverlayHlsConfig());
+    const overlayConfig = getOverlayHlsConfig();
+    overlayConfig.loader = createOverlaySegmentLoader();
+    overlayHls = new Hls(overlayConfig);
 
     const videoUrl = `${API_BASE_URL}${URL_TO_INDEX_M3U8(id, resolution)}`;
     overlayHls.loadSource(videoUrl);
     overlayHls.attachMedia(overlayVideoContainer);
 
-    // New: strict sequential segment loading and 202 retry logic
-    const segmentState = new Map(); // key -> {retryCount, pendingPromise}
-    const MAX_RETRY_202 = 10;
-    const RETRY_202_DELAY = 2000; // 2 seconds
+    const SEEK_SEGMENT_THRESHOLD = 10;
+    const initialTime = Number.isFinite(startTime) ? startTime : 0;
+    const shouldAutoPlay = resumePlayback;
+    let lastLoadedFrag = null;
+    let pendingSeekTime = null;
+    let resumeAfterSeek = false;
+    let controlsLocked = false;
+    let ignoreSeekEvent = false;
 
-    // Helper: Create a unique key for a fragment
-    function fragKey(frag) {
-        return `${frag.level}_${frag.sn}`;
+    const resolutionSelect = document.getElementById('setResolution');
+
+    function setControlsLocked(locked) {
+        controlsLocked = locked;
+        overlayVideoContainer.controls = !locked;
+        overlayVideoContainer.style.pointerEvents = locked ? 'none' : '';
+        if (resolutionSelect) {
+            resolutionSelect.disabled = locked;
+        }
     }
 
-    // Pause/resume control for user-initiated seeks
-    let userInitiatedSeek = false;
+    function getLevelDetails() {
+        const level = overlayHls?.levels?.[overlayHls.currentLevel];
+        return level?.details || null;
+    }
 
-    overlayVideoContainer.addEventListener('seeking', () => {
-        userInitiatedSeek = true;
-        const seekTime = overlayVideoContainer.currentTime;
-        console.log(`User seeking to ${seekTime}s — pausing until the requested segment is buffered`);
-
-        // Stop loading and clear any pending retry timers
-        overlayHls.stopLoad();
-
-        // Start load at the seek time after short delay to allow backend to switch
-        setTimeout(() => {
-            overlayHls.startLoad(seekTime);
-        }, 500);
-    });
-
-    overlayHls.on(Hls.Events.FRAG_LOADING, (event, data) => {
-        const key = fragKey(data.frag);
-        // Ensure we only track one active request per fragment
-        if (!segmentState.has(key)) {
-            segmentState.set(key, { retryCount: 0 });
+    function getFragmentForTime(time) {
+        const details = getLevelDetails();
+        if (!details?.fragments?.length) {
+            return null;
         }
-        console.log(`→ Requesting segment ${data.frag.sn} (${key})`);
-    });
+        return details.fragments.find(frag => time >= frag.start && time < frag.start + frag.duration) || null;
+    }
 
-    // Intercept network responses for 202 status via XHR hooks
-    // Hls.js allows to provide a custom loader, but we can listen to FRAG_LOAD_EMERGENCY_ABORTED and FRAG_LOAD_ERROR events
-    overlayHls.on(Hls.Events.FRAG_LOAD_ERROR, (event, data) => {
-        // Non-fatal fragment error: could be 404/202 etc. Hls doesn't expose status here, so rely on frag.loadData if available
-        const frag = data.frag || data;
-        const key = fragKey(frag);
-        const state = segmentState.get(key) || { retryCount: 0 };
+    function getSegmentDistance(targetFrag, seekTime) {
+        if (lastLoadedFrag && targetFrag) {
+            return Math.abs(targetFrag.sn - lastLoadedFrag.sn);
+        }
+        const details = getLevelDetails();
+        const segmentDuration = details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration;
+        if (!segmentDuration || !lastLoadedFrag) {
+            return 0;
+        }
+        return Math.abs(seekTime - lastLoadedFrag.start) / segmentDuration;
+    }
 
-        // If we have xhr data with status
-        const loader = data && data.networkDetails && data.networkDetails.xhr ? data.networkDetails.xhr : null;
-        const status = loader ? loader.status : (data && data.response && data.response.status) || null;
+    function fragCoversTime(frag, time) {
+        return time >= frag.start && time < frag.start + frag.duration;
+    }
 
-        // If backend signals 202 Accepted, retry after 2s up to MAX_RETRY_202
-        if (status === 202 || (data && data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR && data.response && data.response.status === 202)) {
-            state.retryCount = (state.retryCount || 0) + 1;
-            segmentState.set(key, state);
+    setControlsLocked(false);
 
-            console.log(`Segment ${frag.sn} returned 202 (retry ${state.retryCount}/${MAX_RETRY_202})`);
-
-            if (state.retryCount > MAX_RETRY_202) {
-                console.error(`Segment ${frag.sn} failed after ${MAX_RETRY_202} retries — reporting playback error.`);
-                // Dispatch a user-facing error and stop loading
-                overlayHls.stopLoad();
-                showPlaybackError(`Segment ${frag.sn} unavailable after multiple attempts.`);
-                return;
-            }
-
-            // Wait 2 seconds and re-request this fragment
-            setTimeout(() => {
-                // Only start loading the specific time window of the frag
-                overlayHls.startLoad(frag.start);
-            }, RETRY_202_DELAY);
-
+    overlayVideoContainer.onseeking = () => {
+        if (ignoreSeekEvent) {
+            ignoreSeekEvent = false;
             return;
         }
 
-        // For other non-fatal frag load errors, let Hls attempt normal retries
-        console.warn(`Frag load error for ${frag.sn}`, data);
+        const seekTime = overlayVideoContainer.currentTime;
+        const targetFrag = getFragmentForTime(seekTime);
+        const segmentDistance = getSegmentDistance(targetFrag, seekTime);
+        const shouldLock = segmentDistance >= SEEK_SEGMENT_THRESHOLD;
+
+        if (shouldLock) {
+            resumeAfterSeek = !overlayVideoContainer.paused;
+            pendingSeekTime = seekTime;
+            setControlsLocked(true);
+            overlayVideoContainer.pause();
+        } else {
+            pendingSeekTime = null;
+            resumeAfterSeek = false;
+        }
+
+        overlayHls.stopLoad();
+        setTimeout(() => overlayHls.startLoad(seekTime), 300);
+    };
+
+    overlayVideoContainer.onwaiting = () => {
+        console.log("Player waiting for data...");
+    };
+
+    overlayVideoContainer.onstalled = () => {
+        console.log("Playback stalled, waiting for segment...");
+    };
+
+    overlayHls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+        lastLoadedFrag = data.frag;
     });
 
-    // Use FRAG_LOADED to reset retry counters and handle user-seek resume
-    overlayHls.on(Hls.Events.FRAG_LOADED, (event, data) => {
-        const key = fragKey(data.frag);
-        if (segmentState.has(key)) segmentState.delete(key);
-        console.log(`✓ Segment ${data.frag.sn} loaded and cleared (${key})`);
-
-        // If the user initiated a seek and this frag covers the currentTime, resume playback
-        if (userInitiatedSeek) {
-            const curr = overlayVideoContainer.currentTime;
-            if (curr >= data.frag.start && curr < data.frag.start + data.frag.duration) {
-                console.log('Requested seek segment is available and buffered — resuming playback');
-                userInitiatedSeek = false;
-                // Only resume if user had paused playback
-                if (overlayVideoContainer.paused) {
-                    attemptPlayback(overlayVideoContainer);
-                }
+    overlayHls.on(Hls.Events.FRAG_BUFFERED, (event, data) => {
+        lastLoadedFrag = data.frag;
+        if (pendingSeekTime !== null && fragCoversTime(data.frag, pendingSeekTime)) {
+            pendingSeekTime = null;
+            setControlsLocked(false);
+            if (resumeAfterSeek) {
+                attemptPlayback(overlayVideoContainer);
             }
+            resumeAfterSeek = false;
         }
     });
 
     overlayHls.on(Hls.Events.ERROR, (event, data) => {
-        // Handle fatal errors conservatively
         if (data.fatal) {
             console.error('Fatal HLS error in overlay player:', data.type, data.details);
             switch (data.type) {
                 case Hls.ErrorTypes.NETWORK_ERROR:
-                    // Try gentle reload
                     overlayHls.stopLoad();
                     setTimeout(() => overlayHls.startLoad(), 2000);
                     break;
@@ -712,41 +793,33 @@ function loadVideoInOverlay(id, resolution) {
         }
     });
 
-    overlayHls.on(Hls.Events.FRAG_BUFFERED, (event, data) => {
-        // Buffering confirmed
-        console.log(`✓ Fragment ${data.frag.sn} buffered`);
-    });
-
-    // Handle manifest parsing
     overlayHls.on(Hls.Events.MANIFEST_PARSED, () => {
         console.log("Manifest parsed, waiting for segments...");
-        
-        // Don't auto-play, wait for segments
-        setTimeout(() => {
-            if (overlayVideoContainer.readyState >= 2) {
-                attemptPlayback(overlayVideoContainer);
-            } else {
-                // Keep checking
-                const checkReady = setInterval(() => {
-                    if (overlayVideoContainer.readyState >= 2) {
-                        clearInterval(checkReady);
-                        attemptPlayback(overlayVideoContainer);
-                    }
-                }, 500);
-                
-                // Timeout after 30 seconds
-                setTimeout(() => clearInterval(checkReady), 30000);
-            }
-        }, 1500);
-    });
+        overlayHls.startLoad(initialTime);
 
-    // Prevent automatic seeking on stalls
-    overlayVideoContainer.addEventListener('waiting', () => {
-        console.log("Player waiting for data...");
-    });
+        if (initialTime > 0) {
+            overlayVideoContainer.addEventListener('loadedmetadata', () => {
+                ignoreSeekEvent = true;
+                overlayVideoContainer.currentTime = initialTime;
+            }, { once: true });
+        }
 
-    overlayVideoContainer.addEventListener('stalled', () => {
-        console.log("Playback stalled, waiting for segment...");
+        if (shouldAutoPlay) {
+            setTimeout(() => {
+                if (overlayVideoContainer.readyState >= 2) {
+                    attemptPlayback(overlayVideoContainer);
+                } else {
+                    const checkReady = setInterval(() => {
+                        if (overlayVideoContainer.readyState >= 2) {
+                            clearInterval(checkReady);
+                            attemptPlayback(overlayVideoContainer);
+                        }
+                    }, 500);
+
+                    setTimeout(() => clearInterval(checkReady), 30000);
+                }
+            }, 1500);
+        }
     });
 }
 
