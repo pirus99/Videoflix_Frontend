@@ -1,6 +1,9 @@
 let overlayHls = null;
 let NEWEST = document.getElementById('newest')
 
+const EOS_RECOVERY_THROTTLE_MS = 2000;
+const END_OF_VIDEO_THRESHOLD_SECONDS = 0.5;
+
 /**
  * Shared HLS.js configuration optimized for on-demand transcoding scenarios.
  * Includes extended timeouts, aggressive retry logic, and buffer management.
@@ -328,10 +331,11 @@ function setupHlsErrorHandling(hlsInstance, videoElement, reloadCallback) {
     hlsInstance.on(Hls.Events.BUFFER_EOS, () => {
         console.log("Buffer end of stream reached");
         const now = Date.now();
-        if (now - lastEosRecovery < 2000 || videoElement.ended) {
+        if (now - lastEosRecovery < EOS_RECOVERY_THROTTLE_MS || videoElement.ended) {
             return;
         }
-        if (Number.isFinite(videoElement.duration) && videoElement.currentTime >= videoElement.duration - 0.5) {
+        if (Number.isFinite(videoElement.duration)
+            && videoElement.currentTime >= videoElement.duration - END_OF_VIDEO_THRESHOLD_SECONDS) {
             return;
         }
         lastEosRecovery = now;
@@ -1014,11 +1018,11 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
     overlayHls.on(Hls.Events.BUFFER_EOS, () => {
         const now = Date.now();
-        if (now - lastOverlayEosRecovery < 2000 || overlayVideoContainer.ended) {
+        if (now - lastOverlayEosRecovery < EOS_RECOVERY_THROTTLE_MS || overlayVideoContainer.ended) {
             return;
         }
         if (Number.isFinite(overlayVideoContainer.duration)
-            && overlayVideoContainer.currentTime >= overlayVideoContainer.duration - 0.5) {
+            && overlayVideoContainer.currentTime >= overlayVideoContainer.duration - END_OF_VIDEO_THRESHOLD_SECONDS) {
             return;
         }
         lastOverlayEosRecovery = now;
