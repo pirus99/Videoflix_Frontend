@@ -795,6 +795,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     overlayVideoContainer.addEventListener('pause', () => {
         if (!overlayVideoContainer.seeking && pendingSeekTime === null) {
             userPaused = true;
+        } else {
+            userPaused = false;
         }
     });
 
