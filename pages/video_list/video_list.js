@@ -7,6 +7,7 @@ const OVERLAY_POST_PLAY_BUFFER_LENGTH = 180;
 const OVERLAY_POST_PLAY_MAX_BUFFER_LENGTH = 360;
 const OVERLAY_POST_PLAY_BUFFER_SIZE = 200 * 1000 * 1000;
 const OVERLAY_POST_PLAY_BACK_BUFFER = 120;
+const DEFAULT_RESOLUTION = '480p';
 
 /**
  * Shared HLS.js configuration optimized for on-demand transcoding scenarios.
@@ -1086,9 +1087,9 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (overlayHls.levels && overlayHls.levels.length > 0) {
             // Disable auto quality to avoid switches during on-demand transcoding; users can choose manually.
             overlayHls.autoLevelEnabled = false;
-            const activeResolution = currentResolution || '480p';
+            const activeResolution = currentResolution || DEFAULT_RESOLUTION;
             const levelIndex = overlayHls.levels.findIndex(
-                level => level && level.height !== null && activeResolution === `${level.height}p`
+                level => level && typeof level.height === 'number' && activeResolution === `${level.height}p`
             );
             if (levelIndex < 0) {
                 console.log('Fallback to default quality level (0).');
