@@ -1110,11 +1110,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             const applyManualLevel = () => {
                 overlayHls.currentLevel = resolvedLevel;
             };
-            if (typeof requestAnimationFrame === 'function') {
-                requestAnimationFrame(applyManualLevel);
-            } else {
-                applyManualLevel();
-            }
+            requestAnimationFrame(applyManualLevel);
         }
         overlayHls.startLoad(safeStartTime);
 
