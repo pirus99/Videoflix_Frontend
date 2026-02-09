@@ -278,7 +278,7 @@ async function attemptPlayback(videoElement, maxRetries = 10, retryDelay = 500) 
  */
 function recoverFromBufferEOS(hlsInstance, videoElement, recoveryState) {
     const now = Date.now();
-    if (now - recoveryState.last < BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS || videoElement.ended) {
+    if (now - recoveryState.last <= BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS || videoElement.ended) {
         return;
     }
     if (Number.isFinite(videoElement.duration)
@@ -287,8 +287,15 @@ function recoverFromBufferEOS(hlsInstance, videoElement, recoveryState) {
     }
     // Restart loading from the current position and attempt to resume playback.
     recoveryState.last = now;
-    hlsInstance.startLoad(videoElement.currentTime);
-    attemptPlayback(videoElement);
+    if (!hlsInstance || !hlsInstance.media) {
+        return;
+    }
+    try {
+        hlsInstance.startLoad(videoElement.currentTime);
+        attemptPlayback(videoElement);
+    } catch (error) {
+        console.warn('Failed to recover from buffer EOS.', error);
+    }
 }
 
 /**
