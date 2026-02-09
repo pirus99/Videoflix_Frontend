@@ -831,7 +831,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         pendingSeekTime = null;
     }
 
-    function shouldResumeOnRestart() {
+    function shouldResumePlaybackAfterSeek() {
         // Resume if the user hasn't paused playback.
         return !userPaused;
     }
@@ -870,7 +870,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         const seekTime = overlayVideoContainer.currentTime;
-        const shouldResume = shouldResumeOnRestart();
+        const shouldResume = shouldResumePlaybackAfterSeek();
 
         // Restart the overlay player for reliable seek handling when a video is active.
         if (currentVideo) {
