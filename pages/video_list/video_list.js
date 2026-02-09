@@ -676,7 +676,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     overlayHls.attachMedia(overlayVideoContainer);
 
     const SEEK_SEGMENT_THRESHOLD = 10; // Backend cancels transcoding beyond 10 segments.
-    const SEEK_LOAD_DELAY = 300; // Allow backend to switch transcoding position.
+    const SEEK_LOAD_DELAY = 300; // Allow backend to switch transcoding position for seeks and sequential enforcement.
     const INITIAL_SEEK_SETTLE_TIME = 2000;
     const SEEK_BUFFER_POLL_INTERVAL = 500;
     const SEEK_BUFFER_POLL_TIMEOUT = 120000; // Allow ~2 minutes for slow transcoding before resuming.
@@ -755,7 +755,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     }
 
     function tryResumeFromSeek() {
-        if (pendingSeekTime === null || !isTimeBuffered(pendingSeekTime)) {
+        const buffered = pendingSeekTime !== null && isTimeBuffered(pendingSeekTime);
+        if (!buffered) {
             return false;
         }
         pendingSeekTime = null;
@@ -766,7 +767,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
         resumeAfterSeek = false;
         // True indicates playback can resume after the buffered seek.
-        return true;
+        return buffered;
     }
 
     function isOutOfOrderFragment(frag) {
@@ -934,6 +935,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return;
         }
         if (pendingSeekTime !== null && data.frag.start > pendingSeekTime) {
+            // Ignore fragments beyond the requested seek; we'll retry from the target time instead.
             return;
         }
         lastEnforcedSn = null;
