@@ -1092,7 +1092,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     overlayHls.on(Hls.Events.MANIFEST_PARSED, () => {
         console.log("Manifest parsed, waiting for segments...");
         if (overlayHls.levels && overlayHls.levels.length > 0) {
-            // Disable auto quality to avoid switches during on-demand transcoding; users can choose manually.
+            // Disable auto quality to avoid switches during on-demand transcoding; users must choose manually.
             overlayHls.autoLevelEnabled = false;
             const preferredResolution = currentResolution || DEFAULT_RESOLUTION;
             const preferredIndex = findLevelByResolution(overlayHls.levels, preferredResolution);
@@ -1101,11 +1101,10 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                 ? preferredIndex
                 : (defaultIndex >= 0 ? defaultIndex : 0);
             if (preferredIndex < 0) {
-                if (defaultIndex >= 0) {
-                    console.log(`Fallback to default quality level (${resolvedLevel}).`);
-                } else {
-                    console.log(`Fallback to first available quality level (${resolvedLevel}).`);
-                }
+                const fallbackLabel = resolvedLevel === defaultIndex && defaultIndex >= 0
+                    ? 'default'
+                    : 'first available';
+                console.log(`Fallback to ${fallbackLabel} quality level (${resolvedLevel}).`);
             }
             overlayHls.currentLevel = resolvedLevel;
         }
