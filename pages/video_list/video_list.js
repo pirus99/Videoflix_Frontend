@@ -1,5 +1,5 @@
 let overlayHls = null;
-let NEWEST = document.getElementById('newest')
+let NEWEST = document.getElementById('newest');
 
 const BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS = 2000;
 const END_OF_VIDEO_THRESHOLD_SECONDS = 0.5;
@@ -281,8 +281,8 @@ function recoverFromBufferEOS(hlsInstance, videoElement, recoveryState) {
     if (now - recoveryState.last <= BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS || videoElement.ended) {
         return;
     }
-    if (Number.isFinite(videoElement.duration)
-        && videoElement.currentTime >= videoElement.duration - END_OF_VIDEO_THRESHOLD_SECONDS) {
+    if (Number.isFinite(videoElement.duration) &&
+        videoElement.currentTime >= videoElement.duration - END_OF_VIDEO_THRESHOLD_SECONDS) {
         return;
     }
     // Restart loading from the current position and attempt to resume playback.
