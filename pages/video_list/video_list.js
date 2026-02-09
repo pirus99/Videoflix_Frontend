@@ -767,6 +767,10 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         return true;
     }
 
+    function shouldResumeAfterSeek() {
+        return !userPaused && (resumeAfterSeek || !overlayVideoContainer.paused);
+    }
+
     function clearSeekBufferTimer() {
         if (seekBufferTimer) {
             clearInterval(seekBufferTimer);
@@ -803,8 +807,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             programmaticPause = false;
             return;
         }
-        if (!programmaticPlay
-            && !overlayVideoContainer.seeking
+        if (!overlayVideoContainer.seeking
             && pendingSeekTime === null) {
             userPaused = true;
         }
@@ -828,7 +831,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         // Capture pre-pause state so we can resume once the target segment buffers.
-        const wasPlaying = !userPaused && (resumeAfterSeek || !overlayVideoContainer.paused);
+        const wasPlaying = shouldResumeAfterSeek();
         programmaticPause = true;
         overlayVideoContainer.pause();
         resumeAfterSeek = wasPlaying;
