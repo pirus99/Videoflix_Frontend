@@ -691,8 +691,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let seekBufferTimer = null;
     let seekedHandler = null;
     let userPaused = false;
-    let programmaticPause = false;
-    let programmaticPlay = false;
+    let programmaticPauseTokens = 0;
+    let programmaticPlayTokens = 0;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -760,14 +760,14 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         pendingSeekTime = null;
         setControlsLocked(false);
         if (resumeAfterSeek) {
-            programmaticPlay = true;
+            programmaticPlayTokens += 1;
             attemptPlayback(overlayVideoContainer);
         }
         resumeAfterSeek = false;
         return true;
     }
 
-    function isUserPauseEvent() {
+    function shouldTreatAsUserPause() {
         return !overlayVideoContainer.seeking && pendingSeekTime === null;
     }
 
@@ -791,23 +791,23 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         clearSeekedHandler();
     });
     overlayVideoContainer.addEventListener('play', () => {
-        if (programmaticPlay) {
-            programmaticPlay = false;
+        if (programmaticPlayTokens > 0) {
+            programmaticPlayTokens -= 1;
             return;
         }
         userPaused = false;
         if (pendingSeekTime !== null) {
             resumeAfterSeek = true;
-            programmaticPause = true;
+            programmaticPauseTokens += 1;
             overlayVideoContainer.pause();
         }
     });
     overlayVideoContainer.addEventListener('pause', () => {
-        if (programmaticPause) {
-            programmaticPause = false;
+        if (programmaticPauseTokens > 0) {
+            programmaticPauseTokens -= 1;
             return;
         }
-        if (isUserPauseEvent()) {
+        if (shouldTreatAsUserPause()) {
             userPaused = true;
         }
     });
@@ -831,7 +831,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
         // Capture pre-pause state so we can resume once the target segment buffers.
         const wasPlaying = !overlayVideoContainer.paused && !userPaused;
-        programmaticPause = true;
+        programmaticPauseTokens += 1;
         overlayVideoContainer.pause();
         resumeAfterSeek = wasPlaying;
 
@@ -905,7 +905,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             pendingSeekTime = null;
             setControlsLocked(false);
             if (resumeAfterSeek) {
-                programmaticPlay = true;
+                programmaticPlayTokens += 1;
                 attemptPlayback(overlayVideoContainer);
             }
             resumeAfterSeek = false;
@@ -963,13 +963,13 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (shouldAutoPlay) {
             setTimeout(() => {
                 if (overlayVideoContainer.readyState >= 2) {
-                    programmaticPlay = true;
+                    programmaticPlayTokens += 1;
                     attemptPlayback(overlayVideoContainer);
                 } else {
                     const checkReady = setInterval(() => {
                         if (overlayVideoContainer.readyState >= 2) {
                             clearInterval(checkReady);
-                            programmaticPlay = true;
+                            programmaticPlayTokens += 1;
                             attemptPlayback(overlayVideoContainer);
                         }
                     }, 500);
