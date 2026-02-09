@@ -693,6 +693,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let userPaused = false;
     let programmaticPause = false;
     let programmaticPlay = false;
+    let lastEnforcedSn = null;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -771,6 +772,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         return pendingSeekTime === null
             && lastLoadedFrag
             && typeof lastLoadedFrag.sn === 'number'
+            && typeof frag.sn === 'number'
             && frag.sn > lastLoadedFrag.sn + 1;
     }
 
@@ -778,10 +780,14 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (!isOutOfOrderFrag(frag)) {
             return false;
         }
+        if (lastEnforcedSn === frag.sn) {
+            return true;
+        }
         if (typeof lastLoadedFrag.start !== 'number' || typeof lastLoadedFrag.duration !== 'number') {
             return false;
         }
         const expectedTime = lastLoadedFrag.start + lastLoadedFrag.duration;
+        lastEnforcedSn = frag.sn;
         overlayHls.stopLoad();
         setTimeout(() => overlayHls.startLoad(expectedTime), SEEK_LOAD_DELAY);
         return true;
@@ -920,6 +926,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (enforceSequentialLoad(data.frag)) {
             return;
         }
+        lastEnforcedSn = null;
         lastLoadedFrag = data.frag;
     });
 
@@ -930,6 +937,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         if (pendingSeekTime !== null && data.frag.start > pendingSeekTime) {
             return;
         }
+        lastEnforcedSn = null;
         lastLoadedFrag = data.frag;
         if (pendingSeekTime !== null && fragCoversTime(data.frag, pendingSeekTime)) {
             pendingSeekTime = null;
