@@ -744,6 +744,13 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
     const resolutionSelect = document.getElementById('setResolution');
 
+    function findLevelByResolution(levels, resolutionLabel) {
+        if (!levels || !resolutionLabel) {
+            return -1;
+        }
+        return levels.findIndex(level => typeof level?.height === 'number' && resolutionLabel === `${level.height}p`);
+    }
+
     function setControlsLocked(locked) {
         controlsLocked = locked;
         overlayVideoContainer.controls = !locked;
@@ -1236,9 +1243,3 @@ document.addEventListener('keydown', (event) => {
         closeVideoOverlay();
     }
 });
-    function findLevelByResolution(levels, resolutionLabel) {
-        if (!levels || !resolutionLabel) {
-            return -1;
-        }
-        return levels.findIndex(level => typeof level?.height === 'number' && resolutionLabel === `${level.height}p`);
-    }
