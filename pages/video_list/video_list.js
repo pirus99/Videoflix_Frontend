@@ -768,7 +768,10 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     }
 
     function isUserPauseContext() {
-        return programmaticPauseCount === 0 && !overlayVideoContainer.seeking && pendingSeekTime === null;
+        return programmaticPauseCount === 0
+            && programmaticPlayCount === 0
+            && !overlayVideoContainer.seeking
+            && pendingSeekTime === null;
     }
 
     function clearSeekBufferTimer() {
@@ -792,7 +795,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     });
     overlayVideoContainer.addEventListener('play', () => {
         if (programmaticPlayCount > 0) {
-            programmaticPlayCount -= 1;
+            programmaticPlayCount = Math.max(0, programmaticPlayCount - 1);
             return;
         }
         userPaused = false;
@@ -804,7 +807,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     });
     overlayVideoContainer.addEventListener('pause', () => {
         if (programmaticPauseCount > 0) {
-            programmaticPauseCount -= 1;
+            programmaticPauseCount = Math.max(0, programmaticPauseCount - 1);
             return;
         }
         if (isUserPauseContext()) {
@@ -830,7 +833,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         // Capture pre-pause state so we can resume once the target segment buffers.
-        const wasPlaying = !userPaused;
+        const wasPlaying = !userPaused && !overlayVideoContainer.paused;
         programmaticPauseCount += 1;
         overlayVideoContainer.pause();
         resumeAfterSeek = wasPlaying;
