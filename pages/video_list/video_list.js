@@ -91,7 +91,7 @@ function getOverlayHlsConfig() {
         xhrSetup: function (xhr) {
             xhr.withCredentials = true;
         },
-        autoStartLoad: false, // Manual startLoad for sequential 202 retry handling.
+        autoStartLoad: false, // Manual startLoad to control load timing in the overlay.
 
         // BUFFER-MANAGEMENT - Allow progressive buffering as segments become available
         maxBufferLength: 30, // Reduce to prevent aggressive prefetching
@@ -655,7 +655,7 @@ function initScrollIndicators() {
 
 /**
  * Loads a video in the overlay using HLS.js optimized for on-demand transcoding.
- * Ensures sequential fragment loading and preserves playback state across quality changes.
+ * Ensures fragment loading waits for 202 responses and preserves playback state across quality changes.
  * @param {number} id - The video ID.
  * @param {string} resolution - The desired resolution.
  * @param {{startTime?: number, resumePlayback?: boolean}} [options] - Playback options.
@@ -718,7 +718,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             return 0;
         }
         const details = getLevelDetails();
-        const segmentDuration = details?.targetDuration || details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration;
+        const segmentDuration = details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration;
         if (!segmentDuration) {
             return 0;
         }
