@@ -826,10 +826,20 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         clearSeekedHandler();
     }
 
+    function clearSeekState() {
+        resetSeekTracking();
+        pendingSeekTime = null;
+    }
+
+    function shouldResumeOnRestart() {
+        // Resume if the user hasn't paused, or if a previous seek resume was pending.
+        return !userPaused && (!overlayVideoContainer.paused || resumeAfterSeek);
+    }
+
     setControlsLocked(false);
     // Replace handlers on re-init to avoid duplicate listeners.
     overlayVideoContainer.onemptied = () => {
-        resetSeekTracking();
+        clearSeekState();
     };
     overlayVideoContainer.onplay = () => {
         if (programmaticPlay) {
@@ -860,12 +870,11 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         const seekTime = overlayVideoContainer.currentTime;
-        // Resume if the user hasn't paused, or if a previous seek resume was pending.
-        const shouldResume = !userPaused && (!overlayVideoContainer.paused || resumeAfterSeek);
+        const shouldResume = shouldResumeOnRestart();
 
         // Restart the overlay player for reliable seek handling.
         if (currentVideo) {
-            resetSeekTracking();
+            clearSeekState();
             if (overlayHls) {
                 overlayHls.destroy();
                 overlayHls = null;
@@ -874,8 +883,6 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                 startTime: seekTime,
                 resumePlayback: shouldResume
             });
-            // Reset old seek state; the new player instance owns the next seek flow.
-            pendingSeekTime = null;
             return;
         }
         const targetFrag = getFragmentForTime(seekTime);
