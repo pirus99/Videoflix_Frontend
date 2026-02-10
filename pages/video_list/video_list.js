@@ -109,11 +109,15 @@ function getOverlayHlsConfig() {
         maxBufferHole: 0.5,
         backBufferLength: 30,
 
-        // STALL-DETECTION - Tolerant to wait for transcoding to complete
-        lowBufferWatchdogPeriod: 1.0,
-        highBufferWatchdogPeriod: 3,
-        nudgeOffset: 0.2,
-        nudgeMaxRetry: 5,
+        // STALL-DETECTION - Disable nudging to prevent the player from skipping
+        // forward when segments take time to transcode.  The backend transcodes
+        // segments sequentially, so nothing ahead of the current request will be
+        // available.  Setting nudgeMaxRetry to 0 stops HLS.js from jumping the
+        // playback position on buffer stalls; instead the player simply waits for
+        // the next segment to arrive via the custom 202-retry loader.
+        lowBufferWatchdogPeriod: 5,
+        highBufferWatchdogPeriod: 10,
+        nudgeMaxRetry: 0,
         maxFragLookUpTolerance: 0.25,
 
         // PERFORMANCE - Disable prefetch so HLS.js waits for the current segment
@@ -774,8 +778,52 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     };
 
     // Set up error handling for the overlay player.
-    setupHlsErrorHandling(overlayHls, overlayVideoContainer, () => {
-        loadVideoInOverlay(id, resolution, options);
+    // Unlike the preview player we must NOT restart loading on buffer stalls or
+    // EOS events — the backend transcodes segments sequentially and the custom
+    // 202-retry loader is already waiting for them.  Restarting would cause
+    // HLS.js to request segments out of order, corrupting playback.
+    let overlayRecoverAttempts = 0;
+    const overlayMaxRecoverAttempts = 3;
+
+    overlayHls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+            console.warn("Overlay HLS fatal error:", data.type, data.details);
+            switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                    if (overlayRecoverAttempts < overlayMaxRecoverAttempts) {
+                        overlayRecoverAttempts++;
+                        // Use startLoad(-1) to resume from where loading stopped,
+                        // preserving the sequential fragment order.
+                        setTimeout(() => {
+                            overlayHls.startLoad(-1);
+                        }, 2000 * overlayRecoverAttempts);
+                    } else {
+                        overlayRecoverAttempts = 0;
+                        setTimeout(() => loadVideoInOverlay(id, resolution, options), 3000);
+                    }
+                    break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                    if (overlayRecoverAttempts < overlayMaxRecoverAttempts) {
+                        overlayRecoverAttempts++;
+                        overlayHls.recoverMediaError();
+                    } else {
+                        overlayHls.swapAudioCodec();
+                        overlayHls.recoverMediaError();
+                        overlayRecoverAttempts = 0;
+                    }
+                    break;
+                default:
+                    console.error("Unrecoverable overlay HLS error:", data);
+                    break;
+            }
+        }
+        // Non-fatal errors (BUFFER_STALLED_ERROR, FRAG_LOAD_ERROR, etc.) are
+        // intentionally ignored — the 202-retry loader handles waiting for
+        // segments and nudging is disabled so the player simply waits.
+    });
+
+    overlayVideoContainer.addEventListener('playing', () => {
+        overlayRecoverAttempts = 0;
     });
 
     overlayHls.on(Hls.Events.MANIFEST_PARSED, () => {
