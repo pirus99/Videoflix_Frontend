@@ -9,7 +9,7 @@ const DEFAULT_RESOLUTION = '480p';
 // When the forward buffer drops below MIN_BUFFER_PAUSE the player pauses;
 // it resumes once the buffer recovers to at least MIN_BUFFER_RESUME.
 const MIN_BUFFER_PAUSE = 5;
-const MIN_BUFFER_RESUME = 10;
+const MIN_BUFFER_RESUME = 20;
 
 /**
  * Shared HLS.js configuration optimized for on-demand transcoding scenarios.
@@ -107,16 +107,17 @@ function getOverlayHlsConfig() {
         // begin playback once 3 segments (~30 s) are ready.
         autoStartLoad: false,
 
-        // BUFFER-MANAGEMENT - Keep a modest forward buffer of ~2 segments
-        // (10 s each = 20 s).  Smaller values prevent HLS.js's fragment
-        // scheduler from jumping far ahead of the current playback position.
-        // backBufferLength is set very high so old segments are not evicted
-        // too early — premature eviction can create buffer gaps that confuse
-        // the fragment scheduler and cause it to skip to a much later segment.
-        maxBufferLength: 20,
-        maxMaxBufferLength: 25,
+        // BUFFER-MANAGEMENT - Always keep 3 segments (10 s each = 30 s) buffered
+        // ahead of the current playback position.  maxMaxBufferLength is set
+        // slightly above to give HLS.js room to finish loading a segment that
+        // pushes the buffer just past the target.
+        // backBufferLength is generous to avoid evicting old segments — premature
+        // eviction creates buffer gaps that confuse the fragment scheduler and
+        // cause it to skip to a much later segment.
+        maxBufferLength: 30,
+        maxMaxBufferLength: 35,
         maxBufferSize: 60 * 1000 * 1000,
-        maxBufferHole: 0.5,
+        maxBufferHole: 0.1,
         backBufferLength: 180,
 
         // STALL-DETECTION - Disable nudging to prevent the player from skipping
@@ -125,10 +126,12 @@ function getOverlayHlsConfig() {
         // available.  Setting nudgeMaxRetry to 0 stops HLS.js from jumping the
         // playback position on buffer stalls; instead the player simply waits for
         // the next segment to arrive via the custom 202-retry loader.
+        // maxFragLookUpTolerance is near-zero so the fragment scheduler always
+        // picks the exact next fragment instead of one further ahead.
         lowBufferWatchdogPeriod: 5,
         highBufferWatchdogPeriod: 10,
         nudgeMaxRetry: 0,
-        maxFragLookUpTolerance: 0.25,
+        maxFragLookUpTolerance: 0.01,
 
         // PERFORMANCE - Disable prefetch so HLS.js waits for the current segment
         // before requesting the next one. Critical for in-time transcoding where
@@ -138,9 +141,10 @@ function getOverlayHlsConfig() {
         testBandwidth: false,
         enableSoftwareAES: true,
 
-        // SEEK - Tolerant enough for smooth playback
-        maxSeekHole: 2,
-        seekHoleNudgeDuration: 0.1,
+        // SEEK - Tight tolerance to prevent the player from jumping past
+        // segment boundaries.  Small values keep playback strictly sequential.
+        maxSeekHole: 0.5,
+        seekHoleNudgeDuration: 0.05,
 
         // NETWORK-CONFIGURATION - Extended timeouts for transcoding delays.
         // The custom 202-retry loader handles waiting for segments being
@@ -167,8 +171,8 @@ function getOverlayHlsConfig() {
         // ADVANCED SETTINGS
         lowLatencyMode: false,
         enableCEA708Captions: false,
-        stretchShortVideoTrack: true,
-        forceKeyFrameOnDiscontinuity: true,
+        stretchShortVideoTrack: false,
+        forceKeyFrameOnDiscontinuity: false,
 
         // LIVE-STREAM-CONFIGURATION
         liveSyncDurationCount: 3,
