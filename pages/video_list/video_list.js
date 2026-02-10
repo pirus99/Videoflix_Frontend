@@ -5,6 +5,12 @@ const BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS = 2000;
 const END_OF_VIDEO_THRESHOLD_SECONDS = 0.5;
 const DEFAULT_RESOLUTION = '480p';
 
+// Minimum buffer thresholds (in seconds) for the overlay player.
+// When the forward buffer drops below MIN_BUFFER_PAUSE the player pauses;
+// it resumes once the buffer recovers to at least MIN_BUFFER_RESUME.
+const MIN_BUFFER_PAUSE = 5;
+const MIN_BUFFER_RESUME = 15;
+
 /**
  * Shared HLS.js configuration optimized for on-demand transcoding scenarios.
  * Includes extended timeouts, aggressive retry logic, and buffer management.
@@ -285,6 +291,23 @@ async function attemptPlayback(videoElement, maxRetries = 10, retryDelay = 500) 
             await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
     }
+}
+
+/**
+ * Returns the amount of forward buffer (in seconds) ahead of the current
+ * playback position for the given video element.
+ * @param {HTMLVideoElement} videoElement - The video element to inspect.
+ * @returns {number} Seconds of buffered data ahead of currentTime.
+ */
+function getForwardBuffer(videoElement) {
+    const buffered = videoElement.buffered;
+    const currentTime = videoElement.currentTime;
+    for (let i = 0; i < buffered.length; i++) {
+        if (buffered.start(i) <= currentTime && currentTime <= buffered.end(i)) {
+            return buffered.end(i) - currentTime;
+        }
+    }
+    return 0;
 }
 
 /**
@@ -745,6 +768,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let programmaticPlay = false;
     let bufferedSegments = 0;
     let playbackStarted = false;
+    let bufferingPaused = false;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -774,6 +798,21 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
     };
     overlayVideoContainer.onplaying = null;
+
+    // Monitor forward buffer during playback.  When it drops below
+    // MIN_BUFFER_PAUSE the player pauses to let more data accumulate;
+    // once it recovers to MIN_BUFFER_RESUME playback resumes automatically.
+    overlayVideoContainer.ontimeupdate = () => {
+        if (!playbackStarted || userPaused || overlayVideoContainer.ended) {
+            return;
+        }
+        const forward = getForwardBuffer(overlayVideoContainer);
+        if (!bufferingPaused && forward < MIN_BUFFER_PAUSE) {
+            bufferingPaused = true;
+            programmaticPause = true;
+            overlayVideoContainer.pause();
+        }
+    };
 
     overlayVideoContainer.onseeking = () => {
         if (ignoreSeekEvent || !initialSeekDone) {
@@ -847,13 +886,24 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
     // Track each segment that is fully fetched and appended to the buffer.
     // The player stays paused until SEGMENTS_BEFORE_PLAY segments have been
-    // buffered, then playback begins automatically.
+    // buffered, then playback begins automatically.  If playback was
+    // previously paused due to low buffer, it resumes once the forward
+    // buffer reaches MIN_BUFFER_RESUME.
     overlayHls.on(Hls.Events.FRAG_BUFFERED, () => {
         bufferedSegments++;
         if (!playbackStarted && bufferedSegments >= SEGMENTS_BEFORE_PLAY && resumePlayback) {
             playbackStarted = true;
             programmaticPlay = true;
             attemptPlayback(overlayVideoContainer);
+            return;
+        }
+        if (bufferingPaused && !userPaused) {
+            const forward = getForwardBuffer(overlayVideoContainer);
+            if (forward >= MIN_BUFFER_RESUME) {
+                bufferingPaused = false;
+                programmaticPlay = true;
+                attemptPlayback(overlayVideoContainer);
+            }
         }
     });
 
