@@ -972,6 +972,10 @@ function openVideoOverlay(videoId, resolution) {
         resolutionSelect.value = resolution;
     }
     currentResolution = resolution;
+    // Pause the preview player so it doesn't keep playing behind the overlay.
+    if (videoContainer) {
+        videoContainer.pause();
+    }
     loadVideoInOverlay(videoId, resolution);
     document.body.style.overflow = 'hidden';
 
