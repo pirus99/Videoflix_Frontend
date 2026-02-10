@@ -96,15 +96,16 @@ function getOverlayHlsConfig() {
             xhr.withCredentials = true;
         },
 
-        // BUFFER-MANAGEMENT - Prefetch at most 3 segments ahead of the current one.
-        // With typical 4-second segments this means ~12 seconds of forward buffer.
-        // For longer segments (e.g. 6s) the player may buffer fewer than 3; for
-        // shorter segments (e.g. 2s) it may buffer slightly more.  Adjust these
-        // values if the backend's segment duration changes.
-        // As the current segment is consumed, the player fetches the next segment
+        // Disable automatic loading — we call startLoad() manually after
+        // attaching the media so we can track buffered segments and only
+        // begin playback once 3 segments (~30 s) are ready.
+        autoStartLoad: false,
+
+        // BUFFER-MANAGEMENT - Buffer up to 3 segments ahead (10 s each = 30 s).
+        // As the current segment is consumed, the player fetches the next one
         // to maintain the look-ahead window.
-        maxBufferLength: 12,
-        maxMaxBufferLength: 16,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 40,
         maxBufferSize: 60 * 1000 * 1000,
         maxBufferHole: 0.5,
         backBufferLength: 30,
@@ -732,12 +733,15 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     overlayHls.attachMedia(overlayVideoContainer);
 
     const INITIAL_SEEK_SETTLE_TIME = 2000;
+    const SEGMENTS_BEFORE_PLAY = 3;
     let ignoreSeekEvent = false;
     let ignoreSeekResetTimer = null;
     let initialSeekDone = false;
     let userPaused = false;
     let programmaticPause = false;
     let programmaticPlay = false;
+    let bufferedSegments = 0;
+    let playbackStarted = false;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -838,6 +842,18 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         overlayRecoverAttempts = 0;
     });
 
+    // Track each segment that is fully fetched and appended to the buffer.
+    // The player stays paused until SEGMENTS_BEFORE_PLAY segments have been
+    // buffered, then playback begins automatically.
+    overlayHls.on(Hls.Events.FRAG_BUFFERED, () => {
+        bufferedSegments++;
+        if (!playbackStarted && bufferedSegments >= SEGMENTS_BEFORE_PLAY && resumePlayback) {
+            playbackStarted = true;
+            programmaticPlay = true;
+            attemptPlayback(overlayVideoContainer);
+        }
+    });
+
     overlayHls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (overlayHls.levels && overlayHls.levels.length > 0) {
             const preferredResolution = currentResolution || DEFAULT_RESOLUTION;
@@ -848,6 +864,10 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                 : (defaultIndex >= 0 ? defaultIndex : 0);
             overlayHls.currentLevel = resolvedLevel;
         }
+
+        // Begin loading segments.  The player stays paused — playback will
+        // start only once FRAG_BUFFERED has fired SEGMENTS_BEFORE_PLAY times.
+        overlayHls.startLoad(startTime > 0 ? startTime : -1);
 
         if (startTime > 0) {
             const applyInitialSeek = () => {
@@ -876,18 +896,6 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             }
         } else {
             initialSeekDone = true;
-        }
-
-        if (resumePlayback) {
-            const startPlayback = () => {
-                programmaticPlay = true;
-                attemptPlayback(overlayVideoContainer);
-            };
-            if (overlayVideoContainer.readyState >= 2) {
-                startPlayback();
-            } else {
-                overlayVideoContainer.addEventListener('canplay', startPlayback, { once: true });
-            }
         }
     });
 }
