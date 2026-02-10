@@ -96,10 +96,15 @@ function getOverlayHlsConfig() {
             xhr.withCredentials = true;
         },
 
-        // BUFFER-MANAGEMENT - Conservative to work with in-time transcoding.
-        // The backend transcodes segments sequentially, so avoid requesting too far ahead.
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
+        // BUFFER-MANAGEMENT - Prefetch at most 3 segments ahead of the current one.
+        // With typical 4-second segments this means ~12 seconds of forward buffer.
+        // For longer segments (e.g. 6s) the player may buffer fewer than 3; for
+        // shorter segments (e.g. 2s) it may buffer slightly more.  Adjust these
+        // values if the backend's segment duration changes.
+        // As the current segment is consumed, the player fetches the next segment
+        // to maintain the look-ahead window.
+        maxBufferLength: 12,
+        maxMaxBufferLength: 16,
         maxBufferSize: 60 * 1000 * 1000,
         maxBufferHole: 0.5,
         backBufferLength: 30,
