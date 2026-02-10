@@ -9,7 +9,7 @@ const DEFAULT_RESOLUTION = '480p';
 // When the forward buffer drops below MIN_BUFFER_PAUSE the player pauses;
 // it resumes once the buffer recovers to at least MIN_BUFFER_RESUME.
 const MIN_BUFFER_PAUSE = 5;
-const MIN_BUFFER_RESUME = 15;
+const MIN_BUFFER_RESUME = 10;
 
 /**
  * Shared HLS.js configuration optimized for on-demand transcoding scenarios.
@@ -107,14 +107,17 @@ function getOverlayHlsConfig() {
         // begin playback once 3 segments (~30 s) are ready.
         autoStartLoad: false,
 
-        // BUFFER-MANAGEMENT - Buffer up to 3 segments ahead (10 s each = 30 s).
-        // As the current segment is consumed, the player fetches the next one
-        // to maintain the look-ahead window.
-        maxBufferLength: 30,
-        maxMaxBufferLength: 40,
+        // BUFFER-MANAGEMENT - Keep a modest forward buffer of ~2 segments
+        // (10 s each = 20 s).  Smaller values prevent HLS.js's fragment
+        // scheduler from jumping far ahead of the current playback position.
+        // backBufferLength is set very high so old segments are not evicted
+        // too early — premature eviction can create buffer gaps that confuse
+        // the fragment scheduler and cause it to skip to a much later segment.
+        maxBufferLength: 20,
+        maxMaxBufferLength: 25,
         maxBufferSize: 60 * 1000 * 1000,
         maxBufferHole: 0.5,
-        backBufferLength: 30,
+        backBufferLength: 180,
 
         // STALL-DETECTION - Disable nudging to prevent the player from skipping
         // forward when segments take time to transcode.  The backend transcodes
