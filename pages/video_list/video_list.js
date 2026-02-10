@@ -741,6 +741,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     let lastEnforcedSn = null;
     const overlayEosRecoveryState = { last: 0 };
     let postStartBufferingEnabled = false;
+    let initialSeekDone = false;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -932,7 +933,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
     };
 
     overlayVideoContainer.onseeking = () => {
-        if (ignoreSeekEvent) {
+        if (ignoreSeekEvent || !initialSeekDone) {
             return;
         }
 
@@ -1067,7 +1068,22 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
     });
 
+    function isAllFragmentsLoaded() {
+        const details = getLevelDetails();
+        if (!details || details.live !== false || !lastLoadedFrag) {
+            return false;
+        }
+        const fragments = details.fragments;
+        if (!fragments || fragments.length === 0) {
+            return false;
+        }
+        return lastLoadedFrag.sn >= fragments[fragments.length - 1].sn;
+    }
+
     overlayHls.on(Hls.Events.BUFFER_EOS, () => {
+        if (isAllFragmentsLoaded()) {
+            return;
+        }
         recoverFromBufferEOS(overlayHls, overlayVideoContainer, overlayEosRecoveryState);
     });
 
@@ -1126,6 +1142,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                         ignoreSeekResetTimer = null;
                     }
                     ignoreSeekEvent = false;
+                    initialSeekDone = true;
                     overlayVideoContainer.removeEventListener('seeked', resetIgnoreSeek);
                 };
                 overlayVideoContainer.addEventListener('seeked', resetIgnoreSeek);
@@ -1138,6 +1155,8 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             } else {
                 overlayVideoContainer.addEventListener('loadedmetadata', applyInitialSeek, { once: true });
             }
+        } else {
+            initialSeekDone = true;
         }
 
         if (shouldAutoPlay) {
