@@ -96,31 +96,36 @@ function getOverlayHlsConfig() {
             xhr.withCredentials = true;
         },
 
-        // BUFFER-MANAGEMENT - Allow healthy buffering for smooth playback
-        maxBufferLength: 60,
-        maxMaxBufferLength: 600,
-        maxBufferSize: 120 * 1000 * 1000,
+        // BUFFER-MANAGEMENT - Conservative to work with in-time transcoding.
+        // The backend transcodes segments sequentially, so avoid requesting too far ahead.
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        maxBufferSize: 60 * 1000 * 1000,
         maxBufferHole: 0.5,
-        backBufferLength: 60,
+        backBufferLength: 30,
 
-        // STALL-DETECTION - Tolerant enough to recover from buffer gaps
+        // STALL-DETECTION - Tolerant to wait for transcoding to complete
         lowBufferWatchdogPeriod: 1.0,
         highBufferWatchdogPeriod: 3,
         nudgeOffset: 0.2,
         nudgeMaxRetry: 5,
         maxFragLookUpTolerance: 0.25,
 
-        // PERFORMANCE
+        // PERFORMANCE - Disable prefetch so HLS.js waits for the current segment
+        // before requesting the next one. Critical for in-time transcoding where
+        // segments are only available sequentially.
         enableWorker: true,
-        startFragPrefetch: true,
-        testBandwidth: true,
+        startFragPrefetch: false,
+        testBandwidth: false,
         enableSoftwareAES: true,
 
         // SEEK - Tolerant enough for smooth playback
         maxSeekHole: 2,
         seekHoleNudgeDuration: 0.1,
 
-        // NETWORK-CONFIGURATION - Extended for transcoding
+        // NETWORK-CONFIGURATION - Extended timeouts for transcoding delays.
+        // Fragment retries are handled by the custom 202-retry loader, so keep
+        // fragLoadingMaxRetry low to avoid double-retry behaviour.
         manifestLoadingTimeOut: 30000,
         manifestLoadingMaxRetry: 6,
         manifestLoadingRetryDelay: 2000,
@@ -129,10 +134,10 @@ function getOverlayHlsConfig() {
         levelLoadingMaxRetry: 6,
         levelLoadingRetryDelay: 2000,
         levelLoadingMaxRetryTimeout: 60000,
-        fragLoadingTimeOut: 60000,
-        fragLoadingMaxRetry: 6,
+        fragLoadingTimeOut: 120000,
+        fragLoadingMaxRetry: 1,
         fragLoadingRetryDelay: 2000,
-        fragLoadingMaxRetryTimeout: 60000,
+        fragLoadingMaxRetryTimeout: 120000,
 
         // APPEND-CONFIGURATION
         appendErrorMaxRetry: 5,
