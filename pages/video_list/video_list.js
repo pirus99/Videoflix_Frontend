@@ -134,8 +134,11 @@ function getOverlayHlsConfig() {
         seekHoleNudgeDuration: 0.1,
 
         // NETWORK-CONFIGURATION - Extended timeouts for transcoding delays.
-        // Fragment retries are handled by the custom 202-retry loader, so keep
-        // fragLoadingMaxRetry low to avoid double-retry behaviour.
+        // The custom 202-retry loader handles waiting for segments being
+        // transcoded, but HLS.js must also be configured to never give up on a
+        // fragment while the loader is working.  A high fragLoadingMaxRetry
+        // prevents HLS.js from skipping to the next segment on timeouts, and
+        // the long fragLoadingTimeOut gives the 202-retry loop room to operate.
         manifestLoadingTimeOut: 30000,
         manifestLoadingMaxRetry: 6,
         manifestLoadingRetryDelay: 2000,
@@ -145,8 +148,8 @@ function getOverlayHlsConfig() {
         levelLoadingRetryDelay: 2000,
         levelLoadingMaxRetryTimeout: 60000,
         fragLoadingTimeOut: 120000,
-        fragLoadingMaxRetry: 1,
-        fragLoadingRetryDelay: 2000,
+        fragLoadingMaxRetry: 100,
+        fragLoadingRetryDelay: 1500,
         fragLoadingMaxRetryTimeout: 120000,
 
         // APPEND-CONFIGURATION
