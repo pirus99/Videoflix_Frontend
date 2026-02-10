@@ -194,12 +194,14 @@ function createOverlaySegmentLoader(retryDelay = 1500) {
             this.retryDelay = retryDelay;
             this.retryTimer = null;
             this.isDestroyed = false;
+            this.waitingFor202 = false;
         }
 
         load(context, config, callbacks) {
             const wrappedCallbacks = {
                 onSuccess: (response, stats, ctx, networkDetails) => {
                     if (ctx?.type === 'fragment' && stats?.httpStatus === 202) {
+                        this.waitingFor202 = true;
                         if (this.retryTimer) {
                             clearTimeout(this.retryTimer);
                         }
@@ -210,12 +212,15 @@ function createOverlaySegmentLoader(retryDelay = 1500) {
                         }, this.retryDelay);
                         return;
                     }
+                    this.waitingFor202 = false;
                     callbacks.onSuccess(response, stats, ctx, networkDetails);
                 },
                 onError: (error, ctx, networkDetails) => {
+                    this.waitingFor202 = false;
                     callbacks.onError(error, ctx, networkDetails);
                 },
                 onTimeout: (stats, ctx, networkDetails) => {
+                    this.waitingFor202 = false;
                     callbacks.onTimeout(stats, ctx, networkDetails);
                 },
                 onProgress: (stats, ctx, data, networkDetails) => {
@@ -229,6 +234,12 @@ function createOverlaySegmentLoader(retryDelay = 1500) {
         }
 
         abort() {
+            // While waiting for a 202 retry, ignore abort requests from HLS.js.
+            // This prevents the stream controller from cancelling the retry loop
+            // and skipping ahead to a later (also unavailable) segment.
+            if (this.waitingFor202) {
+                return;
+            }
             if (this.retryTimer) {
                 clearTimeout(this.retryTimer);
                 this.retryTimer = null;
@@ -238,6 +249,7 @@ function createOverlaySegmentLoader(retryDelay = 1500) {
 
         destroy() {
             this.isDestroyed = true;
+            this.waitingFor202 = false;
             if (this.retryTimer) {
                 clearTimeout(this.retryTimer);
                 this.retryTimer = null;
