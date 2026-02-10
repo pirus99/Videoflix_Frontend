@@ -3,10 +3,6 @@ const NEWEST_ELEMENT = document.getElementById('newest');
 
 const BUFFER_END_OF_STREAM_RECOVERY_THROTTLE_MS = 2000;
 const END_OF_VIDEO_THRESHOLD_SECONDS = 0.5;
-const OVERLAY_POST_PLAY_BUFFER_LENGTH = 180;
-const OVERLAY_POST_PLAY_MAX_BUFFER_LENGTH = 360;
-const OVERLAY_POST_PLAY_BUFFER_SIZE = 200 * 1000 * 1000;
-const OVERLAY_POST_PLAY_BACK_BUFFER = 120;
 const DEFAULT_RESOLUTION = '480p';
 
 /**
@@ -99,76 +95,62 @@ function getOverlayHlsConfig() {
         xhrSetup: function (xhr) {
             xhr.withCredentials = true;
         },
-        autoStartLoad: false, // Manual startLoad to control load timing in the overlay.
 
-        // BUFFER-MANAGEMENT - Allow progressive buffering as segments become available
-        maxBufferLength: 30, // Reduce to prevent aggressive prefetching
-        maxMaxBufferLength: 60,
-        maxBufferSize: 60 * 1000 * 1000,
+        // BUFFER-MANAGEMENT - Allow healthy buffering for smooth playback
+        maxBufferLength: 60,
+        maxMaxBufferLength: 600,
+        maxBufferSize: 120 * 1000 * 1000,
         maxBufferHole: 0.5,
-        backBufferLength: 20,
+        backBufferLength: 60,
 
         // STALL-DETECTION - Tolerant enough to recover from buffer gaps
-        lowBufferWatchdogPeriod: 0.5,
-        highBufferWatchdogPeriod: 2,
+        lowBufferWatchdogPeriod: 1.0,
+        highBufferWatchdogPeriod: 3,
         nudgeOffset: 0.2,
-        nudgeMaxRetry: 3,
+        nudgeMaxRetry: 5,
         maxFragLookUpTolerance: 0.25,
 
         // PERFORMANCE
         enableWorker: true,
-        startFragPrefetch: false, // Critical: don't prefetch
-        testBandwidth: false,
+        startFragPrefetch: true,
+        testBandwidth: true,
         enableSoftwareAES: true,
-        progressive: false, // Disable progressive loading to prevent parallel requests
-        
-        // ABR - Disable adaptive bitrate to prevent segment jumping
-        abrEwmaFastLive: 1,
-        abrEwmaSlowLive: 3,
-        abrEwmaFastVoD: 1,
-        abrEwmaSlowVoD: 3,
-        abrEwmaDefaultEstimate: 500000,
-        abrBandWidthFactor: 0.8,
-        abrBandWidthUpFactor: 0.7,
 
         // SEEK - Tolerant enough for smooth playback
-        maxSeekHole: 0.5,
+        maxSeekHole: 2,
         seekHoleNudgeDuration: 0.1,
 
-        // NETWORK-CONFIGURATION - Managed by custom retry logic
+        // NETWORK-CONFIGURATION - Extended for transcoding
         manifestLoadingTimeOut: 30000,
-        manifestLoadingMaxRetry: 3,
+        manifestLoadingMaxRetry: 6,
         manifestLoadingRetryDelay: 2000,
         manifestLoadingMaxRetryTimeout: 60000,
         levelLoadingTimeOut: 30000,
-        levelLoadingMaxRetry: 3,
+        levelLoadingMaxRetry: 6,
         levelLoadingRetryDelay: 2000,
         levelLoadingMaxRetryTimeout: 60000,
-        
-        // FRAGMENT-LOADING - Let our custom handler manage this
-        fragLoadingTimeOut: 30000, // 30 seconds timeout
-        fragLoadingMaxRetry: 1, // We handle retries manually
-        fragLoadingRetryDelay: 1000,
-        fragLoadingMaxRetryTimeout: 30000,
+        fragLoadingTimeOut: 60000,
+        fragLoadingMaxRetry: 6,
+        fragLoadingRetryDelay: 2000,
+        fragLoadingMaxRetryTimeout: 60000,
 
         // APPEND-CONFIGURATION
-        appendErrorMaxRetry: 3,
+        appendErrorMaxRetry: 5,
 
         // ADVANCED SETTINGS
         lowLatencyMode: false,
         enableCEA708Captions: false,
-        stretchShortVideoTrack: false, // Don't manipulate playback
-        forceKeyFrameOnDiscontinuity: false,
-        abrEwmaDefaultEstimate: 500000,
-        
+        stretchShortVideoTrack: true,
+        forceKeyFrameOnDiscontinuity: true,
+
         // LIVE-STREAM-CONFIGURATION
         liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 5,
+        liveMaxLatencyDurationCount: 10,
         liveDurationInfinity: false,
 
-        // FRAGMENT-DRIFT-TOLERANCE - Strict to prevent skipping
-        maxAudioFramesDrift: 1,
-        maxVideoFramesDrift: 1,
+        // FRAGMENT-DRIFT-TOLERANCE
+        maxAudioFramesDrift: 2,
+        maxVideoFramesDrift: 2,
 
         // START-POSITION
         startPosition: -1,
@@ -714,34 +696,22 @@ function loadVideoInOverlay(id, resolution, options = {}) {
 
     const overlayConfig = getOverlayHlsConfig();
     overlayConfig.loader = createOverlaySegmentLoader();
+    if (startTime > 0) {
+        overlayConfig.startPosition = startTime;
+    }
     overlayHls = new Hls(overlayConfig);
 
     const videoUrl = `${API_BASE_URL}${URL_TO_INDEX_M3U8(id, resolution)}`;
     overlayHls.loadSource(videoUrl);
     overlayHls.attachMedia(overlayVideoContainer);
 
-    const SEEK_SEGMENT_THRESHOLD = 10; // Backend cancels transcoding beyond 10 segments.
-    const SEEK_LOAD_DELAY = 300; // Allow backend to switch transcoding position for seeks and sequential enforcement.
     const INITIAL_SEEK_SETTLE_TIME = 2000;
-    const SEEK_BUFFER_POLL_INTERVAL = 500;
-    const SEEK_BUFFER_POLL_TIMEOUT = 120000; // Allow ~2 minutes for slow transcoding before resuming.
-    const safeStartTime = Number.isFinite(startTime) ? startTime : 0;
-    const shouldAutoPlay = resumePlayback;
-    let lastLoadedFrag = null;
-    let pendingSeekTime = null;
-    let resumeAfterSeek = false;
-    let controlsLocked = false;
     let ignoreSeekEvent = false;
     let ignoreSeekResetTimer = null;
-    let seekBufferTimer = null;
-    let seekedHandler = null;
+    let initialSeekDone = false;
     let userPaused = false;
     let programmaticPause = false;
     let programmaticPlay = false;
-    let lastEnforcedSn = null;
-    const overlayEosRecoveryState = { last: 0 };
-    let postStartBufferingEnabled = false;
-    let initialSeekDone = false;
 
     const resolutionSelect = document.getElementById('setResolution');
 
@@ -752,185 +722,25 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         return levels.findIndex(level => typeof level?.height === 'number' && resolutionLabel === `${level.height}p`);
     }
 
-    function setControlsLocked(locked) {
-        controlsLocked = locked;
-        overlayVideoContainer.controls = !locked;
-        overlayVideoContainer.style.pointerEvents = locked ? 'none' : '';
-        if (resolutionSelect) {
-            resolutionSelect.disabled = locked;
-        }
-    }
-
-    function getLevelDetails() {
-        const level = overlayHls?.levels?.[overlayHls.currentLevel];
-        return level?.details || null;
-    }
-
-    function getFragmentForTime(time) {
-        const details = getLevelDetails();
-        if (!details?.fragments?.length) {
-            return null;
-        }
-        return details.fragments.find(frag => fragCoversTime(frag, time)) || null;
-    }
-
-    function getSegmentDistance(targetFrag, seekTime) {
-        if (lastLoadedFrag && targetFrag) {
-            return Math.abs(targetFrag.sn - lastLoadedFrag.sn);
-        }
-        if (!lastLoadedFrag && targetFrag?.sn !== undefined) {
-            return Math.abs(targetFrag.sn);
-        }
-        if (!lastLoadedFrag) {
-            return 0;
-        }
-        const details = getLevelDetails();
-        const estimatedSegmentDuration = details?.targetDuration || details?.targetduration || lastLoadedFrag?.duration || targetFrag?.duration; // Support Hls.js target duration naming.
-        if (!estimatedSegmentDuration) {
-            console.warn('Segment duration unavailable for seek distance.');
-            return 0;
-        }
-        return Math.abs(seekTime - lastLoadedFrag.start) / estimatedSegmentDuration;
-    }
-
-    function fragCoversTime(frag, time) {
-        return time >= frag.start && time < frag.start + frag.duration;
-    }
-
-    function isTimeBuffered(time) {
-        if (!overlayVideoContainer.buffered) {
-            return false;
-        }
-        for (let i = 0; i < overlayVideoContainer.buffered.length; i++) {
-            if (time >= overlayVideoContainer.buffered.start(i) && time < overlayVideoContainer.buffered.end(i)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // Returns true when a pending seek is buffered and state updates were applied; false otherwise.
-    function tryResumeFromSeek() {
-        const buffered = pendingSeekTime !== null && isTimeBuffered(pendingSeekTime);
-        if (!buffered) {
-            return false;
-        }
-        pendingSeekTime = null;
-        setControlsLocked(false);
-        if (resumeAfterSeek) {
-            programmaticPlay = true;
-            attemptPlayback(overlayVideoContainer);
-        }
-        resumeAfterSeek = false;
-        // True indicates the buffered seek was handled and state was updated.
-        return buffered;
-    }
-
-    function isOutOfOrderFragment(frag) {
-        // Only enforce strict ordering during normal playback; seeks are handled separately.
-        return pendingSeekTime === null
-            && lastLoadedFrag
-            && Number.isFinite(lastLoadedFrag.sn)
-            && Number.isFinite(frag.sn)
-            && frag.sn > lastLoadedFrag.sn + 1;
-    }
-
-    function enforceSequentialLoad(frag) {
-        if (!isOutOfOrderFragment(frag)) {
-            return false;
-        }
-        if (lastEnforcedSn === frag.sn) {
-            // Already enforced this fragment; ignore it to avoid repeating load restarts.
-            return true;
-        }
-        if (typeof lastLoadedFrag.start !== 'number' || typeof lastLoadedFrag.duration !== 'number') {
-            console.warn('Missing fragment timing; skipping sequential enforcement.');
-            return false;
-        }
-        const expectedTime = lastLoadedFrag.start + lastLoadedFrag.duration;
-        if (!Number.isFinite(expectedTime) || expectedTime < 0) {
-            console.warn('Invalid fragment timing; skipping sequential enforcement.');
-            return false;
-        }
-        lastEnforcedSn = frag.sn;
-        overlayHls.stopLoad();
-        setTimeout(() => overlayHls.startLoad(expectedTime), SEEK_LOAD_DELAY);
-        return true;
-    }
-
-    function shouldResumeAfterSeek() {
-        return !userPaused && (resumeAfterSeek || !overlayVideoContainer.paused);
-    }
-
-    function clearSeekBufferTimer() {
-        if (seekBufferTimer) {
-            clearInterval(seekBufferTimer);
-            seekBufferTimer = null;
-        }
-    }
-
-    function clearSeekedHandler() {
-        if (seekedHandler) {
-            overlayVideoContainer.removeEventListener('seeked', seekedHandler);
-            seekedHandler = null;
-        }
-    }
-
-    function resetSeekTracking() {
-        clearSeekBufferTimer();
-        clearSeekedHandler();
-    }
-
-    function clearSeekState() {
-        resetSeekTracking();
-        pendingSeekTime = null;
-    }
-
-    function shouldResumePlaybackAfterSeek() {
-        // Resume if the user hasn't paused playback.
-        return !userPaused;
-    }
-
-    setControlsLocked(false);
     // Replace handlers on re-init; these are the sole overlay player listeners.
-    overlayVideoContainer.onemptied = () => {
-        clearSeekState();
-    };
+    overlayVideoContainer.onemptied = null;
     overlayVideoContainer.onplay = () => {
         if (programmaticPlay) {
             programmaticPlay = false;
             return;
         }
         userPaused = false;
-        if (pendingSeekTime !== null) {
-            resumeAfterSeek = true;
-            programmaticPause = true;
-            overlayVideoContainer.pause();
-        }
     };
     overlayVideoContainer.onpause = () => {
         if (programmaticPause) {
             programmaticPause = false;
             return;
         }
-        if (!overlayVideoContainer.seeking
-            && pendingSeekTime === null) {
+        if (!overlayVideoContainer.seeking) {
             userPaused = true;
         }
     };
-    overlayVideoContainer.onplaying = () => {
-        if (postStartBufferingEnabled || !overlayHls) {
-            return;
-        }
-        postStartBufferingEnabled = true;
-        // Increase buffer targets after playback starts to reduce rebuffering.
-        // Preserve any higher configured values to avoid shrinking buffers mid-session.
-        overlayHls.config.maxBufferLength = Math.max(overlayHls.config.maxBufferLength, OVERLAY_POST_PLAY_BUFFER_LENGTH);
-        overlayHls.config.maxMaxBufferLength = Math.max(overlayHls.config.maxMaxBufferLength, OVERLAY_POST_PLAY_MAX_BUFFER_LENGTH);
-        overlayHls.config.maxBufferSize = Math.max(overlayHls.config.maxBufferSize, OVERLAY_POST_PLAY_BUFFER_SIZE);
-        // backBufferLength can be undefined in HLS.js configs, so guard with nullish coalescing.
-        overlayHls.config.backBufferLength = Math.max(overlayHls.config.backBufferLength ?? 0, OVERLAY_POST_PLAY_BACK_BUFFER);
-    };
+    overlayVideoContainer.onplaying = null;
 
     overlayVideoContainer.onseeking = () => {
         if (ignoreSeekEvent || !initialSeekDone) {
@@ -938,199 +748,38 @@ function loadVideoInOverlay(id, resolution, options = {}) {
         }
 
         const seekTime = overlayVideoContainer.currentTime;
-        const shouldResume = shouldResumePlaybackAfterSeek();
+        const shouldResume = !userPaused;
 
-        // Restart the overlay player for reliable seek handling when transcoding is delayed.
+        // Destroy and replace the player for user-initiated seeks.
         if (currentVideo) {
-            clearSeekState();
             if (overlayHls) {
                 overlayHls.destroy();
                 overlayHls = null;
             }
-            // Restart with the current position and playback intent.
             loadVideoInOverlay(currentVideo, currentResolution, {
                 startTime: seekTime,
                 resumePlayback: shouldResume
             });
-            return;
         }
-
-        // Fallback to in-place seek handling if no current video is tracked.
-        if (!overlayHls) {
-            return;
-        }
-        const targetFrag = getFragmentForTime(seekTime);
-        const segmentDistance = getSegmentDistance(targetFrag, seekTime);
-        const shouldLock = segmentDistance >= SEEK_SEGMENT_THRESHOLD;
-
-        lastEnforcedSn = null;
-        pendingSeekTime = seekTime;
-
-        // Pause for all seeks; lock controls only for large jumps that restart transcoding.
-        if (shouldLock) {
-            setControlsLocked(true);
-        }
-
-        // Capture pre-pause state so we can resume once the target segment buffers.
-        const wasPlaying = shouldResumeAfterSeek();
-        programmaticPause = true;
-        overlayVideoContainer.pause();
-        resumeAfterSeek = wasPlaying;
-
-        overlayHls.stopLoad();
-        resetSeekTracking(); // Ensure only one seeked handler for rapid consecutive seeks.
-        seekedHandler = () => {
-            clearSeekBufferTimer();
-            if (!tryResumeFromSeek() && pendingSeekTime !== null) {
-                const pollStart = Date.now();
-                seekBufferTimer = setInterval(() => {
-                    // pendingSeekTime can be cleared by other buffering events between ticks.
-                    if (pendingSeekTime === null) {
-                        clearSeekBufferTimer();
-                        return;
-                    }
-                    if (Date.now() - pollStart > SEEK_BUFFER_POLL_TIMEOUT) {
-                        clearSeekBufferTimer();
-                        return;
-                    }
-                    if (tryResumeFromSeek()) {
-                        clearSeekBufferTimer();
-                        return;
-                    }
-                }, SEEK_BUFFER_POLL_INTERVAL);
-            }
-        };
-        overlayVideoContainer.addEventListener('seeked', seekedHandler, { once: true });
-        setTimeout(() => {
-            try {
-                overlayHls.startLoad(seekTime);
-            } catch (error) {
-                console.error('Failed to restart overlay load after seek.', { seekTime, error });
-            }
-        }, SEEK_LOAD_DELAY);
     };
 
-    overlayHls.on(Hls.Events.FRAG_LOADING, (event, data) => {
-        const frag = data.frag;
-        if (!frag || typeof frag.sn !== 'number') {
-            return;
-        }
-        if (pendingSeekTime !== null) {
-            if (fragCoversTime(frag, pendingSeekTime)) {
-                return;
-            }
-            if (frag.start > pendingSeekTime) {
-                overlayHls.stopLoad();
-                setTimeout(() => overlayHls.startLoad(pendingSeekTime), SEEK_LOAD_DELAY);
-            }
-            return;
-        }
-        if (!lastLoadedFrag || typeof lastLoadedFrag.sn !== 'number') {
-            return;
-        }
-        const expectedSn = lastLoadedFrag.sn + 1;
-        if (frag.sn > expectedSn) {
-            const expectedTime = lastLoadedFrag.start + lastLoadedFrag.duration;
-            overlayHls.stopLoad();
-            setTimeout(() => overlayHls.startLoad(expectedTime), SEEK_LOAD_DELAY);
-        }
-    });
-
-    overlayHls.on(Hls.Events.FRAG_LOADED, (event, data) => {
-        if (isOutOfOrderFragment(data.frag)) {
-            // Keep the last sequential fragment to avoid jumping forward.
-            // Sequential enforcement happens when buffering completes.
-            return;
-        }
-        lastLoadedFrag = data.frag;
-    });
-
-    overlayHls.on(Hls.Events.FRAG_BUFFERED, (event, data) => {
-        if (enforceSequentialLoad(data.frag)) {
-            return;
-        }
-        if (pendingSeekTime !== null
-            && Number.isFinite(data.frag.start)
-            && data.frag.start > pendingSeekTime) {
-            // Ignore fragments beyond the requested seek; we'll retry from the target time instead.
-            return;
-        }
-        lastEnforcedSn = null;
-        lastLoadedFrag = data.frag;
-        if (pendingSeekTime !== null && fragCoversTime(data.frag, pendingSeekTime)) {
-            pendingSeekTime = null;
-            setControlsLocked(false);
-            if (resumeAfterSeek) {
-                programmaticPlay = true;
-                attemptPlayback(overlayVideoContainer);
-            }
-            resumeAfterSeek = false;
-        }
-    });
-
-    function isAllFragmentsLoaded() {
-        const details = getLevelDetails();
-        if (!details || details.live !== false || !lastLoadedFrag) {
-            return false;
-        }
-        const fragments = details.fragments;
-        if (!fragments || fragments.length === 0) {
-            return false;
-        }
-        return lastLoadedFrag.sn >= fragments[fragments.length - 1].sn;
-    }
-
-    overlayHls.on(Hls.Events.BUFFER_EOS, () => {
-        if (isAllFragmentsLoaded()) {
-            return;
-        }
-        recoverFromBufferEOS(overlayHls, overlayVideoContainer, overlayEosRecoveryState);
-    });
-
-    overlayHls.on(Hls.Events.ERROR, (event, data) => {
-        if (data.fatal) {
-            console.error('Fatal HLS error in overlay player:', data.type, data.details);
-            switch (data.type) {
-                case Hls.ErrorTypes.NETWORK_ERROR:
-                    overlayHls.stopLoad();
-                    setTimeout(() => overlayHls.startLoad(), 2000);
-                    break;
-                case Hls.ErrorTypes.MEDIA_ERROR:
-                    overlayHls.recoverMediaError();
-                    break;
-                default:
-                    showPlaybackError('Playback failed due to an unrecoverable error.');
-                    break;
-            }
-        }
+    // Set up error handling for the overlay player.
+    setupHlsErrorHandling(overlayHls, overlayVideoContainer, () => {
+        loadVideoInOverlay(id, resolution, options);
     });
 
     overlayHls.on(Hls.Events.MANIFEST_PARSED, () => {
-        console.log("Manifest parsed, waiting for segments...");
         if (overlayHls.levels && overlayHls.levels.length > 0) {
-            // Disable auto quality to avoid switches during on-demand transcoding; users must choose manually.
-            overlayHls.autoLevelEnabled = false;
             const preferredResolution = currentResolution || DEFAULT_RESOLUTION;
             const preferredIndex = findLevelByResolution(overlayHls.levels, preferredResolution);
             const defaultIndex = findLevelByResolution(overlayHls.levels, DEFAULT_RESOLUTION);
             const resolvedLevel = preferredIndex >= 0
                 ? preferredIndex
                 : (defaultIndex >= 0 ? defaultIndex : 0);
-            if (preferredIndex < 0) {
-                let fallbackLabel = 'first available';
-                if (resolvedLevel === defaultIndex && defaultIndex >= 0) {
-                    fallbackLabel = 'default';
-                }
-                console.log(`Fallback to ${fallbackLabel} quality level (${resolvedLevel}).`);
-            }
-            const applyManualLevel = () => {
-                overlayHls.currentLevel = resolvedLevel;
-            };
-            requestAnimationFrame(applyManualLevel);
+            overlayHls.currentLevel = resolvedLevel;
         }
-        overlayHls.startLoad(safeStartTime);
 
-        if (safeStartTime > 0) {
+        if (startTime > 0) {
             const applyInitialSeek = () => {
                 ignoreSeekEvent = true;
                 if (ignoreSeekResetTimer) {
@@ -1147,7 +796,7 @@ function loadVideoInOverlay(id, resolution, options = {}) {
                 };
                 overlayVideoContainer.addEventListener('seeked', resetIgnoreSeek);
                 ignoreSeekResetTimer = setTimeout(resetIgnoreSeek, INITIAL_SEEK_SETTLE_TIME);
-                overlayVideoContainer.currentTime = safeStartTime;
+                overlayVideoContainer.currentTime = startTime;
             };
 
             if (overlayVideoContainer.readyState >= 1) {
@@ -1159,23 +808,16 @@ function loadVideoInOverlay(id, resolution, options = {}) {
             initialSeekDone = true;
         }
 
-        if (shouldAutoPlay) {
-            setTimeout(() => {
-                if (overlayVideoContainer.readyState >= 2) {
-                    programmaticPlay = true;
-                    attemptPlayback(overlayVideoContainer);
-                } else {
-                    const checkReady = setInterval(() => {
-                        if (overlayVideoContainer.readyState >= 2) {
-                            clearInterval(checkReady);
-                            programmaticPlay = true;
-                            attemptPlayback(overlayVideoContainer);
-                        }
-                    }, 500);
-
-                    setTimeout(() => clearInterval(checkReady), 30000);
-                }
-            }, 1500);
+        if (resumePlayback) {
+            const startPlayback = () => {
+                programmaticPlay = true;
+                attemptPlayback(overlayVideoContainer);
+            };
+            if (overlayVideoContainer.readyState >= 2) {
+                startPlayback();
+            } else {
+                overlayVideoContainer.addEventListener('canplay', startPlayback, { once: true });
+            }
         }
     });
 }
