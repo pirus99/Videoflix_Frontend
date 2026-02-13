@@ -1,5 +1,5 @@
 let overlayHls = null;
-let NEWEST = document.getElementById('newest')
+let NEWEST
 
 /**
  * Scrolls a video list container horizontally.
@@ -33,6 +33,7 @@ async function initVideoList() {
 function initDOMElements() {
     videoContainer = document.getElementById('videoPlayer');
     overlayVideoContainer = document.getElementById('overlayVideo');
+    NEWEST = document.getElementById('newest');
     LASTREFRESH = new Date().getTime();
 }
 
@@ -75,12 +76,12 @@ async function loadAndSetupVideos() {
 }
 
 /**
- * Sets the initial video on page load.
+ * Sets the initial video on page load and loads it in the background preview player.
  */
 function setupInitialVideo() {
     if (VIDEOS && VIDEOS.length > 0) {
         currentVideo = VIDEOS[0].id;
-        loadVideo(VIDEOS[0].id, '480p');
+        loadVideo(VIDEOS[0].id);
     }
 }
 
@@ -213,7 +214,7 @@ function showVideo(id) {
     document.getElementById('videoDescription').innerHTML = video.description;
     document.getElementById('playButton').setAttribute("onclick", `playVideo(${id})`)
     currentVideo = id
-    loadVideo(id, '480p');
+    loadVideo(id);
 }
 
 /**
@@ -237,11 +238,11 @@ async function doRefresh() {
 }
 
 /**
- * Loads and plays a video using HLS.js.
+ * Loads and plays a video in the background preview using HLS.js.
+ * This player uses the preview endpoint and loops continuously.
  * @param {number} id - The video ID.
- * @param {string} resolution - The desired video resolution (e.g., '480p').
  */
-function loadVideo(id, resolution) {
+function loadVideo(id) {
     if (hls) {
         hls.destroy();
     }
@@ -250,11 +251,11 @@ function loadVideo(id, resolution) {
             xhr.withCredentials = true
         },
         // BUFFER-MANAGEMENT
-        maxBufferLength: 45,
-        maxMaxBufferLength: 900,
-        maxBufferSize: 90 * 1000 * 1000,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 600,
+        maxBufferSize: 60 * 1000 * 1000,
         maxBufferHole: 0.5,
-        backBufferLength: 90,
+        backBufferLength: 60,
 
         // STALL-DETECTION
         lowBufferWatchdogPeriod: 0.5,
@@ -309,21 +310,47 @@ function loadVideo(id, resolution) {
         enableEmsgMetadataCues: false,
         enableID3MetadataCues: false
     });
-    hls.loadSource(`${API_BASE_URL}${URL_TO_INDEX_M3U8(id, resolution)}`);
+    
+    // Use the preview endpoint
+    hls.loadSource(`${API_BASE_URL}${URL_TO_PREVIEW_M3U8(id)}`);
     hls.attachMedia(videoContainer);
 
+    // Enable looping for the background preview
+    videoContainer.loop = true;
+
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setTimeout(() => {
-            videoContainer.play().catch(() => {
-                console.log("User interaction required to start playback");
-            });
-        }, 2000)
+        videoContainer.play().catch(() => {
+            console.log("User interaction required to start playback");
+        });
     });
 
     hls.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
             console.error("HLS fatal error:", data);
+            // Try to recover from fatal errors
+            switch(data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                    console.log("Recovering from network error...");
+                    hls.startLoad();
+                    break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                    console.log("Recovering from media error...");
+                    hls.recoverMediaError();
+                    break;
+                default:
+                    console.log("Cannot recover from error, destroying player");
+                    hls.destroy();
+                    break;
+            }
         }
+    });
+
+    // When video ends, restart it (fallback if HLS doesn't loop properly)
+    videoContainer.addEventListener('ended', () => {
+        videoContainer.currentTime = 0;
+        videoContainer.play().catch(() => {
+            console.log("Failed to restart preview video");
+        });
     });
 }
 

@@ -66,3 +66,16 @@ const TOAST_DURATION = 2000;
  * // url is 'video/5/720p/index.m3u8'
  */
 const URL_TO_INDEX_M3U8 = (id, resolution) => `video/${id}/${resolution}/index.m3u8`
+
+/**
+ * Generates the URL path to the HLS preview playlist (index.m3u8) for a given video.
+ * The preview endpoint serves a looping background preview of the video.
+ *
+ * @param {number|string} id - The unique identifier of the video/movie.
+ * @returns {string} The URL path to the HLS preview playlist file for the specified video.
+ *
+ * @example
+ * const url = URL_TO_PREVIEW_M3U8(5);
+ * // url is 'preview/5/index.m3u8'
+ */
+const URL_TO_PREVIEW_M3U8 = (id) => `preview/${id}/index.m3u8`

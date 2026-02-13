@@ -40,14 +40,15 @@ let LASTREFRESH
 let STARTINTERVALL
 
 /**
- * Instance of the HLS.js player used for video streaming.
+ * Instance of the HLS.js player used for background preview streaming.
+ * This player loops continuously and uses the preview endpoint.
  *
  * @type {Hls | undefined}
  */
 let hls
 
 /**
- * Reference to the HTML container element for the video player.
+ * Reference to the HTML container element for the background preview video player.
  *
  * @type {HTMLElement | null}
  */
